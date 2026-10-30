@@ -1,15 +1,13 @@
 import type {StoredTokens} from "@yotoplay/oauth-device-code-flow"
 import {createCookie} from "react-router"
 
+import {getAuthSecret} from "./app-context"
 import {decrypt, encrypt} from "./encryption.server"
 
 // --- Cookie Setup ---
 
 function getSecret(env: Env): string {
-    const secret = env.YOTO_AUTH_SECRET
-    if (!secret)
-        throw new Error("YOTO_AUTH_SECRET environment variable is required")
-    return secret
+    return getAuthSecret(env)
 }
 
 // Cache cookies by secret to avoid recreating them
@@ -46,6 +44,8 @@ export async function getTokensFromCookie(
     env: Env,
 ): Promise<StoredTokens | null> {
     const cookieHeader = request.headers.get("Cookie")
+    if (!cookieHeader || !cookieHeader.includes("yoto-auth=")) return null
+
     const encrypted = await getAuthCookie(env, true).parse(cookieHeader)
     if (!encrypted) return null
 

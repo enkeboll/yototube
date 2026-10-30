@@ -1,11 +1,8 @@
+import {getAuthSecret} from "./app-context"
 import {decrypt, encrypt} from "./encryption.server"
 
 function getSecret(env: Env): string {
-    const secret = env.YOTO_AUTH_SECRET
-    if (!secret) {
-        throw new Error("YOTO_AUTH_SECRET environment variable is required")
-    }
-    return secret
+    return getAuthSecret(env)
 }
 
 async function createImportCredential(
