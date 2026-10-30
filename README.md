@@ -70,7 +70,8 @@ npm run format
 1. Open **Container Manager** on your Synology NAS.
 2. Under **Project** (Docker Compose), create a new project pointing to this directory or use the provided `docker-compose.yml`.
 3. Provide the environment variables in your `.env` file:
-    - `YOTO_AUTH_SECRET`: (Required) Encryption secret for secure cookie auth storage
+    - `YOTO_CLIENT_ID`: (Optional) Your Yoto App Client ID from [yoto.dev](https://yoto.dev)
+    - `YOTO_AUTH_SECRET`: (Required in production) 32-byte encryption secret for secure cookie auth storage
     - `PORT`: (Default: `3000`)
     - `RESEND_API_KEY`: (Optional) For sending feedback emails
 4. Start the project. Yoto Sync will be accessible on your local network at `http://<nas-ip>:3000`.

@@ -10,6 +10,7 @@ services:
             - PORT=3000
             - NODE_ENV=production
             - YOTO_AUTH_SECRET=${YOTO_AUTH_SECRET}
+            - YOTO_CLIENT_ID=${YOTO_CLIENT_ID:-}
             - RESEND_API_KEY=${RESEND_API_KEY:-}
         env_file:
             - path: .env

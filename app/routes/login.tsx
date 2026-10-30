@@ -64,7 +64,22 @@ export async function action({
 
     if (intent === "initiate") {
         // Step 1: Start device code flow
-        const deviceCode = await initiateLogin()
+        const deviceCode = await initiateLogin(env)
+
+        if (!deviceCode.success) {
+            const isClientError =
+                deviceCode.error === "Unauthorized or unknown client" ||
+                deviceCode.error?.includes("client")
+
+            const errorMsg = isClientError
+                ? "Unauthorized or unknown client ID. Please register a free app at https://yoto.dev and set YOTO_CLIENT_ID in your .env file."
+                : (deviceCode.error ?? "Failed to initiate login with Yoto.")
+
+            return {
+                step: "error" as const,
+                error: errorMsg,
+            }
+        }
 
         return {
             step: "pending" as const,
@@ -153,14 +168,29 @@ export default function Login() {
                     {errorData ? (
                         <div className="space-y-4">
                             <div className="space-y-2 text-center">
-                                <p className="text-destructive">
+                                <p className="text-destructive font-medium">
                                     {errorData.error}
                                 </p>
                                 <p className="text-sm text-muted-foreground">
-                                    If Yoto says access is denied, check that
-                                    you signed in with the account that owns
-                                    your cards. If the code expired, start again
-                                    to get a fresh one.
+                                    To use YotoTube, you can register an
+                                    application in the{" "}
+                                    <a
+                                        href="https://yoto.dev"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="underline hover:text-foreground"
+                                    >
+                                        Yoto Developer Portal (yoto.dev)
+                                    </a>{" "}
+                                    and set{" "}
+                                    <code className="bg-muted px-1 py-0.5 rounded text-xs">
+                                        YOTO_CLIENT_ID
+                                    </code>{" "}
+                                    in your{" "}
+                                    <code className="bg-muted px-1 py-0.5 rounded text-xs">
+                                        .env
+                                    </code>
+                                    .
                                 </p>
                             </div>
                             <Form method="post">

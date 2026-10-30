@@ -46,6 +46,7 @@ export function getAppEnv(context?: {
 
     return {
         YOTO_AUTH_SECRET: getAuthSecret(),
+        YOTO_CLIENT_ID: process.env.YOTO_CLIENT_ID,
         RESEND_API_KEY: process.env.RESEND_API_KEY,
         PORT: process.env.PORT,
         NODE_ENV: process.env.NODE_ENV,

@@ -13,22 +13,28 @@ import {
 } from "./auth-cookie.server"
 import {EVENT, telemetry} from "./telemetry.server"
 
-// Auth0 configuration for Yoto
-const AUTH_CONFIG = {
-    domain: "login.yotoplay.com",
-    clientId: "PhKouPhz6NPVaWLtyeiEwjfB7m8sVR77",
-    audience: "https://api.yotoplay.com",
-}
+const DEFAULT_CLIENT_ID = "PhKouPhz6NPVaWLtyeiEwjfB7m8sVR77"
+const AUTH_DOMAIN = "login.yotoplay.com"
+const AUTH_AUDIENCE = "https://api.yotoplay.com"
 const AUTH_SCOPE = "offline_access"
 
 // Lazy-initialized singletons
 let _auth: DeviceCodeAuth | null = null
+let _authClientId: string | null = null
 let _sdk: YotoSdk | null = null
 let _sdkToken: string | null = null
 
-const getAuth = (): DeviceCodeAuth => {
-    if (!_auth) {
-        _auth = new DeviceCodeAuth(AUTH_CONFIG)
+const getAuth = (env?: Env): DeviceCodeAuth => {
+    const clientId =
+        env?.YOTO_CLIENT_ID || process.env.YOTO_CLIENT_ID || DEFAULT_CLIENT_ID
+
+    if (!_auth || _authClientId !== clientId) {
+        _auth = new DeviceCodeAuth({
+            domain: AUTH_DOMAIN,
+            clientId,
+            audience: AUTH_AUDIENCE,
+        })
+        _authClientId = clientId
     }
     return _auth
 }
@@ -86,9 +92,9 @@ const getAuthFailureReason = (error?: string) => {
 }
 
 // Initiates device code flow - returns info for user to complete auth
-const initiateLogin = async (): Promise<DeviceCodeResult> => {
+const initiateLogin = async (env?: Env): Promise<DeviceCodeResult> => {
     const startedAt = Date.now()
-    const auth = getAuth()
+    const auth = getAuth(env)
 
     telemetry.info(EVENT.AUTH.LOGIN.STARTED)
 
@@ -128,7 +134,7 @@ const completeLogin = async (
     | {success: false; error: string}
 > => {
     const startedAt = Date.now()
-    const auth = getAuth()
+    const auth = getAuth(env)
 
     try {
         const result = await auth.pollForToken(deviceCode, interval, timeout)
@@ -241,7 +247,7 @@ const tryRefreshToken = async (
     secure: boolean,
 ): Promise<{tokens: StoredTokens; setCookie: string} | null> => {
     const startedAt = Date.now()
-    const auth = getAuth()
+    const auth = getAuth(env)
 
     try {
         const result = await auth.refreshToken(refreshToken)
