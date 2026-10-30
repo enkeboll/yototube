@@ -37,6 +37,13 @@ export function _resetAuthCookie() {
     cookieCache.clear()
 }
 
+export const pkceCookie = createCookie("yoto-pkce", {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 10, // 10 minutes
+})
+
 // --- Public API ---
 
 export async function getTokensFromCookie(

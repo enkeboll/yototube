@@ -5,6 +5,7 @@ import {
     redirect,
     useActionData,
     useFetcher,
+    useLoaderData,
     useNavigation,
 } from "react-router"
 
@@ -17,7 +18,12 @@ import {
     CardTitle,
 } from "~/components/ui/card"
 import {getAppEnv} from "~/lib/app-context"
-import {completeLogin, initiateLogin, status} from "~/lib/auth.server"
+import {
+    completeLogin,
+    initiateLogin,
+    initiatePkceLogin,
+    status,
+} from "~/lib/auth.server"
 
 import type {Route} from "./+types/login"
 
@@ -49,10 +55,13 @@ export async function loader({request, context}: Route.LoaderArgs) {
         throw redirect("/cards")
     }
 
-    return {}
+    const url = new URL(request.url)
+    const urlError = url.searchParams.get("error")
+
+    return {urlError}
 }
 
-// Handle the two-step device code flow
+// Handle login flows
 export async function action({
     request,
     context,
@@ -61,6 +70,13 @@ export async function action({
 
     const formData = await request.formData()
     const intent = formData.get("intent")
+
+    if (intent === "oauth") {
+        const {authUrl, setCookie} = await initiatePkceLogin(request, env)
+        return redirect(authUrl, {
+            headers: {"Set-Cookie": setCookie},
+        })
+    }
 
     if (intent === "initiate") {
         // Step 1: Start device code flow
@@ -116,6 +132,7 @@ export async function action({
 }
 
 export default function Login() {
+    const {urlError} = useLoaderData<typeof loader>()
     const actionData = useActionData<ActionData>()
     const completeFetcher = useFetcher<typeof action>()
     const navigation = useNavigation()
@@ -131,9 +148,12 @@ export default function Login() {
             ? completeData
             : null
     const errorData = actionData?.step === "error" ? actionData : completeError
+    const displayError = errorData?.error || urlError
+
     const isStarting =
         navigation.state !== "idle" &&
-        navigation.formData?.get("intent") === "initiate"
+        (navigation.formData?.get("intent") === "oauth" ||
+            navigation.formData?.get("intent") === "initiate")
     const isPolling =
         Boolean(pendingData) &&
         pollingDeviceCode === pendingData?.deviceCode &&
@@ -160,65 +180,62 @@ export default function Login() {
                 <CardHeader>
                     <CardTitle>Connect your Yoto account</CardTitle>
                     <CardDescription>
-                        Yoto will show a device confirmation screen. Ensure this
-                        code matches on Yoto, then click confirm.
+                        Sign in with your Yoto account to access and sync your
+                        Make Your Own cards.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                    {errorData ? (
+                    {displayError && (
+                        <div className="space-y-3 rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-center">
+                            <p className="text-sm font-medium text-destructive">
+                                {displayError}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                                Ensure your app at{" "}
+                                <a
+                                    href="https://yoto.dev"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="underline hover:text-foreground"
+                                >
+                                    yoto.dev
+                                </a>{" "}
+                                has your callback URL configured (e.g.{" "}
+                                <code className="bg-muted px-1 py-0.5 rounded">
+                                    http://localhost:3000/callback
+                                </code>
+                                ) and matches{" "}
+                                <code className="bg-muted px-1 py-0.5 rounded">
+                                    YOTO_CLIENT_ID
+                                </code>{" "}
+                                in your{" "}
+                                <code className="bg-muted px-1 py-0.5 rounded">
+                                    .env
+                                </code>
+                                .
+                            </p>
+                        </div>
+                    )}
+
+                    {!pendingData ? (
                         <div className="space-y-4">
-                            <div className="space-y-2 text-center">
-                                <p className="text-destructive font-medium">
-                                    {errorData.error}
-                                </p>
-                                <p className="text-sm text-muted-foreground">
-                                    To use YotoTube, you can register an
-                                    application in the{" "}
-                                    <a
-                                        href="https://yoto.dev"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="underline hover:text-foreground"
-                                    >
-                                        Yoto Developer Portal (yoto.dev)
-                                    </a>{" "}
-                                    and set{" "}
-                                    <code className="bg-muted px-1 py-0.5 rounded text-xs">
-                                        YOTO_CLIENT_ID
-                                    </code>{" "}
-                                    in your{" "}
-                                    <code className="bg-muted px-1 py-0.5 rounded text-xs">
-                                        .env
-                                    </code>
-                                    .
-                                </p>
-                            </div>
                             <Form method="post">
                                 <input
                                     type="hidden"
                                     name="intent"
-                                    value="initiate"
+                                    value="oauth"
                                 />
-                                <Button type="submit" className="w-full">
-                                    Try Again
+                                <Button
+                                    type="submit"
+                                    className="w-full"
+                                    disabled={isStarting}
+                                >
+                                    {isStarting
+                                        ? "Redirecting to Yoto..."
+                                        : "Log In with Yoto"}
                                 </Button>
                             </Form>
                         </div>
-                    ) : !pendingData ? (
-                        <Form method="post">
-                            <input
-                                type="hidden"
-                                name="intent"
-                                value="initiate"
-                            />
-                            <Button
-                                type="submit"
-                                className="w-full"
-                                disabled={isStarting}
-                            >
-                                {isStarting ? "Starting..." : "Start Login"}
-                            </Button>
-                        </Form>
                     ) : (
                         <div className="space-y-6">
                             <div className="space-y-3 text-center">

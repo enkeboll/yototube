@@ -1,3 +1,5 @@
+import crypto from "node:crypto"
+
 import {
     DeviceCodeAuth,
     type DeviceCodeResult,
@@ -9,6 +11,7 @@ import {redirect} from "react-router"
 import {
     clearAuthCookie,
     getTokensFromCookie,
+    pkceCookie,
     serializeAuthCookie,
 } from "./auth-cookie.server"
 import {EVENT, telemetry} from "./telemetry.server"
@@ -392,12 +395,150 @@ const isAuthenticated = async (
     return authStatus.valid
 }
 
+type PkceData = {
+    verifier: string
+    state: string
+    redirectUri: string
+}
+
+// PKCE Flow: Initiate browser-based authorization redirect
+const initiatePkceLogin = async (
+    request: Request,
+    env: Env,
+): Promise<{authUrl: string; setCookie: string}> => {
+    const verifier = crypto.randomBytes(32).toString("base64url")
+    const challenge = crypto
+        .createHash("sha256")
+        .update(verifier)
+        .digest("base64url")
+    const state = crypto.randomBytes(16).toString("base64url")
+
+    const url = new URL(request.url)
+    const redirectUri = `${url.origin}/callback`
+    const clientId =
+        env.YOTO_CLIENT_ID || process.env.YOTO_CLIENT_ID || DEFAULT_CLIENT_ID
+
+    const params = new URLSearchParams({
+        response_type: "code",
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        scope: "openid profile email offline_access family:library:view family:library:manage user:content:view user:content:manage user:icons:manage",
+        audience: AUTH_AUDIENCE,
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        state,
+    })
+
+    const authUrl = `https://${AUTH_DOMAIN}/authorize?${params.toString()}`
+    const pkceData: PkceData = {verifier, state, redirectUri}
+    const setCookie = await pkceCookie.serialize(pkceData)
+
+    telemetry.info(EVENT.AUTH.LOGIN.STARTED)
+
+    return {authUrl, setCookie}
+}
+
+// PKCE Flow: Complete authorization code exchange from callback
+const completePkceLogin = async (
+    request: Request,
+    env: Env,
+): Promise<
+    | {success: true; setCookie: string; clearPkceCookie: string}
+    | {success: false; error: string; clearPkceCookie?: string}
+> => {
+    const url = new URL(request.url)
+    const code = url.searchParams.get("code")
+    const state = url.searchParams.get("state")
+    const errorParam =
+        url.searchParams.get("error_description") ||
+        url.searchParams.get("error")
+
+    const cookieHeader = request.headers.get("Cookie")
+    const pkceData = (await pkceCookie.parse(cookieHeader)) as PkceData | null
+    const clearPkceCookie = await pkceCookie.serialize("", {maxAge: 0})
+
+    if (errorParam) {
+        return {success: false, error: errorParam, clearPkceCookie}
+    }
+
+    if (!code || !state || !pkceData) {
+        return {
+            success: false,
+            error: "Authentication session expired or invalid. Please try logging in again.",
+            clearPkceCookie,
+        }
+    }
+
+    if (state !== pkceData.state) {
+        return {
+            success: false,
+            error: "OAuth state mismatch. Please try logging in again.",
+            clearPkceCookie,
+        }
+    }
+
+    const clientId =
+        env.YOTO_CLIENT_ID || process.env.YOTO_CLIENT_ID || DEFAULT_CLIENT_ID
+
+    try {
+        const response = await fetch(`https://${AUTH_DOMAIN}/oauth/token`, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                grant_type: "authorization_code",
+                client_id: clientId,
+                code,
+                code_verifier: pkceData.verifier,
+                redirect_uri: pkceData.redirectUri,
+            }),
+        })
+
+        const data = (await response.json()) as {
+            access_token?: string
+            refresh_token?: string
+            expires_in?: number
+            token_type?: string
+            error?: string
+            error_description?: string
+        }
+
+        if (!response.ok || data.error || !data.access_token) {
+            const errorMsg =
+                data.error_description ||
+                data.error ||
+                "Failed to exchange authorization code for tokens."
+            return {success: false, error: errorMsg, clearPkceCookie}
+        }
+
+        const tokens: StoredTokens = {
+            accessToken: data.access_token,
+            refreshToken: data.refresh_token,
+            expiresAt: Date.now() + (data.expires_in ?? 86400) * 1000,
+            tokenType: data.token_type ?? "Bearer",
+        }
+
+        const isSecure = isSecureRequest(request)
+        const setCookie = await serializeAuthCookie(tokens, env, isSecure)
+
+        return {success: true, setCookie, clearPkceCookie}
+    } catch (err) {
+        return {
+            success: false,
+            error:
+                err instanceof Error ? err.message : "Network error occurred",
+            clearPkceCookie,
+        }
+    }
+}
+
 export {
     completeLogin,
+    completePkceLogin,
     getAuthenticatedSdk,
     getToken,
     getYotoSdk,
     initiateLogin,
+    initiatePkceLogin,
     isAuthenticated,
     logout,
     requireAuth,

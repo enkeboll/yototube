@@ -4,6 +4,7 @@ export default [
     // Public routes
     route("login", "routes/login.tsx"),
     route("logout", "routes/logout.tsx"),
+    route("callback", "routes/callback.tsx"),
     index("routes/landing.tsx"),
 
     // Protected routes (wrapped by auth middleware)
