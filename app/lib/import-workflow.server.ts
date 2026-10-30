@@ -1,9 +1,3 @@
-import {
-    WorkflowEntrypoint,
-    type WorkflowEvent,
-    type WorkflowStep,
-} from "cloudflare:workers"
-
 import {getYotoSdk} from "~/lib/auth.server"
 import {
     getImportSandboxId,
@@ -18,25 +12,35 @@ import {
     updateCard,
 } from "~/lib/import.server"
 import {readImportCredential} from "~/lib/import-credential.server"
+import {getImportProgress} from "~/lib/import-progress.server"
 import {logger} from "~/lib/logger.server"
 import {destroySandbox} from "~/lib/sandbox.server"
 import {EVENT, telemetry} from "~/lib/telemetry.server"
 import {getCanonicalYouTubeUrl, getYouTubeUrlType} from "~/lib/youtube"
 
 type ImportStage =
-    | "inspect_video"
-    | "check_card_capacity"
-    | "process_audio"
-    | "update_card"
+    "inspect_video" | "check_card_capacity" | "process_audio" | "update_card"
 
-class ImportWorkflow extends WorkflowEntrypoint<Env, ImportWorkflowParams> {
-    override async run(
-        event: WorkflowEvent<ImportWorkflowParams>,
-        step: WorkflowStep,
+type WorkflowInstanceStatus = {
+    status: "running" | "complete" | "errored"
+    error?: string | null
+    output?: ImportWorkflowResult | null
+}
+
+type WorkflowInstance = {
+    status: () => Promise<WorkflowInstanceStatus>
+}
+
+class ImportWorkflowRunner {
+    private instances = new Map<string, WorkflowInstanceStatus>()
+
+    async run(
+        payload: ImportWorkflowParams,
+        env: Env,
     ): Promise<ImportWorkflowResult> {
-        const {credential, ...cardImport} = event.payload
+        const {credential, ...cardImport} = payload
         const sandboxId = getImportSandboxId(cardImport)
-        const progress = this.env.IMPORT_PROGRESS.getByName(cardImport.id)
+        const progress = getImportProgress(cardImport.id)
         const telemetryContext = {
             importId: cardImport.id,
             cardId: cardImport.cardId,
@@ -44,19 +48,25 @@ class ImportWorkflow extends WorkflowEntrypoint<Env, ImportWorkflowParams> {
             sourceType: getYouTubeUrlType(cardImport.youtubeUrl),
             splitByChapters: cardImport.splitByChapters,
         }
-        const startedAt = event.timestamp.getTime()
+        const startedAt = Date.now()
         let stage: ImportStage = "inspect_video"
+
+        this.instances.set(cardImport.id, {
+            status: "running",
+            error: null,
+            output: null,
+        })
 
         logger.info({
             message: "import.workflow.started",
             importId: cardImport.id,
             cardId: cardImport.cardId,
-            queueDurationMs: Date.now() - startedAt,
+            queueDurationMs: 0,
         })
 
         const getSdk = async () => {
             const sdkStartedAt = Date.now()
-            const token = await readImportCredential(credential, this.env)
+            const token = await readImportCredential(credential, env)
             const sdk = getYotoSdk(token)
 
             logger.debug({
@@ -69,6 +79,7 @@ class ImportWorkflow extends WorkflowEntrypoint<Env, ImportWorkflowParams> {
 
             return sdk
         }
+
         const reportProgress = async (
             update: Parameters<typeof progress.reportProgress>[0],
         ) => {
@@ -85,18 +96,7 @@ class ImportWorkflow extends WorkflowEntrypoint<Env, ImportWorkflowParams> {
 
         try {
             stage = "inspect_video"
-            const tracks = await step.do(
-                "inspect video",
-                {
-                    retries: {
-                        limit: 3,
-                        delay: "5 seconds",
-                        backoff: "exponential",
-                    },
-                    timeout: "5 minutes",
-                },
-                () => inspectVideo(this.env, cardImport, reportProgress),
-            )
+            const tracks = await inspectVideo(env, cardImport, reportProgress)
             const chapterSplitUnavailable =
                 cardImport.splitByChapters &&
                 tracks.every(track => !track.chapters?.length)
@@ -106,57 +106,26 @@ class ImportWorkflow extends WorkflowEntrypoint<Env, ImportWorkflowParams> {
             )
 
             stage = "check_card_capacity"
-            await step.do(
-                "check card capacity",
-                {
-                    retries: {limit: 0, delay: 0},
-                    timeout: "1 minute",
-                },
-                async () => {
-                    const sdk = await getSdk()
-                    await checkCardCapacity(sdk, cardImport, tracks)
-                },
-            )
+            const sdkForCapacity = await getSdk()
+            await checkCardCapacity(sdkForCapacity, cardImport, tracks)
 
             stage = "process_audio"
-            const transcodedTracks = await step.do(
-                "process audio",
-                {
-                    retries: {
-                        limit: 3,
-                        delay: "10 seconds",
-                        backoff: "exponential",
-                    },
-                    timeout: "30 minutes",
-                },
-                async () => {
-                    const sdk = await getSdk()
-                    return processAudio(
-                        sdk,
-                        this.env,
-                        cardImport,
-                        tracks,
-                        reportProgress,
-                    )
-                },
+            const sdkForAudio = await getSdk()
+            const transcodedTracks = await processAudio(
+                sdkForAudio,
+                env,
+                cardImport,
+                tracks,
+                reportProgress,
             )
 
             stage = "update_card"
-            const result = await step.do(
-                "update card",
-                {
-                    retries: {limit: 0, delay: 0},
-                    timeout: "5 minutes",
-                },
-                async () => {
-                    const sdk = await getSdk()
-                    return updateCard(
-                        sdk,
-                        cardImport,
-                        transcodedTracks,
-                        reportProgress,
-                    )
-                },
+            const sdkForUpdate = await getSdk()
+            const result = await updateCard(
+                sdkForUpdate,
+                cardImport,
+                transcodedTracks,
+                reportProgress,
             )
 
             const completedResult = chapterSplitUnavailable
@@ -178,10 +147,18 @@ class ImportWorkflow extends WorkflowEntrypoint<Env, ImportWorkflowParams> {
                 chapterSplitUnavailable,
             })
 
-            return {
+            const workflowResult: ImportWorkflowResult = {
                 importId: cardImport.id,
                 ...completedResult,
             }
+
+            this.instances.set(cardImport.id, {
+                status: "complete",
+                error: null,
+                output: workflowResult,
+            })
+
+            return workflowResult
         } catch (error) {
             const message =
                 error instanceof Error
@@ -209,31 +186,25 @@ class ImportWorkflow extends WorkflowEntrypoint<Env, ImportWorkflowParams> {
                     reason: "workflow_step_failed",
                 })
             }
+
+            this.instances.set(cardImport.id, {
+                status: "errored",
+                error: message,
+                output: null,
+            })
+
             throw error
         } finally {
             try {
-                await step.do(
-                    "cleanup sandbox",
-                    {
-                        retries: {
-                            limit: 3,
-                            delay: "5 seconds",
-                            backoff: "exponential",
-                        },
-                        timeout: "5 minutes",
-                    },
-                    async () => {
-                        const cleanupStartedAt = Date.now()
-                        await destroySandbox(this.env, sandboxId)
-                        logger.info({
-                            message: "import.sandbox.destroyed",
-                            importId: cardImport.id,
-                            sandboxId,
-                            cardId: cardImport.cardId,
-                            durationMs: Date.now() - cleanupStartedAt,
-                        })
-                    },
-                )
+                const cleanupStartedAt = Date.now()
+                await destroySandbox(env, sandboxId)
+                logger.info({
+                    message: "import.sandbox.destroyed",
+                    importId: cardImport.id,
+                    sandboxId,
+                    cardId: cardImport.cardId,
+                    durationMs: Date.now() - cleanupStartedAt,
+                })
             } catch (error) {
                 logger.warn({
                     message: "import.sandbox.destroy_failed",
@@ -246,6 +217,54 @@ class ImportWorkflow extends WorkflowEntrypoint<Env, ImportWorkflowParams> {
             }
         }
     }
+
+    async create({
+        id,
+        params,
+        env,
+    }: {
+        id: string
+        params: ImportWorkflowParams
+        env?: Env
+    }): Promise<void> {
+        // Start workflow asynchronously without blocking request
+        const currentEnv =
+            env ??
+            ({
+                YOTO_AUTH_SECRET: process.env.YOTO_AUTH_SECRET ?? "",
+                RESEND_API_KEY: process.env.RESEND_API_KEY,
+            } as Env)
+
+        this.instances.set(id, {
+            status: "running",
+            error: null,
+            output: null,
+        })
+
+        // Run in background
+        queueMicrotask(() => {
+            this.run(params, currentEnv).catch(() => {
+                // Error already logged and reported in run()
+            })
+        })
+    }
+
+    async get(id: string): Promise<WorkflowInstance> {
+        const state = this.instances.get(id) ?? {
+            status: "running",
+            error: null,
+            output: null,
+        }
+        return {
+            status: async () => state,
+        }
+    }
+
+    _clear(): void {
+        this.instances.clear()
+    }
 }
 
-export {ImportWorkflow}
+const importWorkflowManager = new ImportWorkflowRunner()
+
+export {importWorkflowManager, ImportWorkflowRunner}

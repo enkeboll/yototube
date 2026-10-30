@@ -1,13 +1,12 @@
+import {getAppEnv} from "~/lib/app-context"
 import {isAuthenticated} from "~/lib/auth.server"
-import {cloudflareContext} from "~/lib/cloudflare-context"
 import {searchYotoIcons} from "~/lib/yoto-icons.server"
 import {searchCommunityIcons} from "~/lib/yotoicons-community.server"
 
 import type {Route} from "./+types/api.icons"
 
 export async function loader({request, context}: Route.LoaderArgs) {
-    // Get env from Cloudflare context
-    const {env} = context.get(cloudflareContext)
+    const env = getAppEnv(context)
 
     const authenticated = await isAuthenticated(request, env)
     if (!authenticated) {

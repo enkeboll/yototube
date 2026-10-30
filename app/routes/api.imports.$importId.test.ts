@@ -10,8 +10,15 @@ vi.mock("~/lib/auth.server", () => ({
     isAuthenticated: (...args: unknown[]) => mockIsAuthenticated(...args),
 }))
 
-vi.mock("~/lib/cloudflare-context", () => ({
-    cloudflareContext: Symbol("cloudflareContext"),
+vi.mock("~/lib/app-context", () => ({
+    getAppEnv: (context?: {get?: (key: unknown) => {env?: Env}}) =>
+        context?.get?.({} as never)?.env ?? createMockEnv(),
+}))
+
+vi.mock("~/lib/import-workflow.server", () => ({
+    importWorkflowManager: {
+        get: (...args: unknown[]) => mockGetWorkflow(...args),
+    },
 }))
 
 import {loader} from "./api.imports.$importId"
@@ -19,11 +26,7 @@ import {loader} from "./api.imports.$importId"
 const importId = "2e4a3b9d-38af-4c55-924a-9d16cc556fb7"
 
 const createLoaderArgs = () => {
-    const env = createMockEnv({
-        IMPORT_WORKFLOW: {
-            get: mockGetWorkflow,
-        } as unknown as Env["IMPORT_WORKFLOW"],
-    })
+    const env = createMockEnv()
 
     return {
         env,

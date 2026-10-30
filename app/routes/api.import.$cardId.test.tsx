@@ -15,8 +15,21 @@ vi.mock("~/lib/auth.server", () => ({
     requireAuthCore: (...args: unknown[]) => mockRequireAuthCore(...args),
 }))
 
-vi.mock("~/lib/cloudflare-context", () => ({
-    cloudflareContext: Symbol("cloudflareContext"),
+vi.mock("~/lib/app-context", () => ({
+    getAppEnv: (context?: {get?: (key: unknown) => {env?: Env}}) =>
+        context?.get?.({} as never)?.env ?? createMockEnv(),
+}))
+
+vi.mock("~/lib/import-progress.server", () => ({
+    importProgressManager: {
+        getByName: (...args: unknown[]) => mockGetProgress(...args),
+    },
+}))
+
+vi.mock("~/lib/import-workflow.server", () => ({
+    importWorkflowManager: {
+        create: (...args: unknown[]) => mockCreateWorkflow(...args),
+    },
 }))
 
 vi.mock("~/lib/import-credential.server", () => ({
@@ -50,14 +63,7 @@ const createLoaderArgs = ({
     importUrl?: string | null
     splitByChapters?: string | null
 } = {}) => {
-    const env = createMockEnv({
-        IMPORT_PROGRESS: {
-            getByName: mockGetProgress,
-        } as unknown as Env["IMPORT_PROGRESS"],
-        IMPORT_WORKFLOW: {
-            create: mockCreateWorkflow,
-        } as unknown as Env["IMPORT_WORKFLOW"],
-    })
+    const env = createMockEnv()
 
     const searchParams = new URLSearchParams()
     if (importUrl !== null) searchParams.set("url", importUrl)

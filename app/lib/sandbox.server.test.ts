@@ -8,10 +8,7 @@ const mockExec = vi.fn()
 const mockDestroy = vi.fn()
 const mockLoggerInfo = vi.fn()
 const mockGetSandbox = vi.fn<
-    (
-        binding: unknown,
-        id: string,
-    ) => {
+    (id: string) => {
         destroy: typeof mockDestroy
         exec: typeof mockExec
     }
@@ -20,8 +17,8 @@ const mockGetSandbox = vi.fn<
     exec: mockExec,
 }))
 
-vi.mock("@cloudflare/sandbox", () => ({
-    getSandbox: (...args: [unknown, string]) => mockGetSandbox(...args),
+vi.mock("./sandbox-executor.server", () => ({
+    getSandbox: (...args: [string]) => mockGetSandbox(...args),
 }))
 
 vi.mock("./logger.server", () => ({
@@ -363,7 +360,7 @@ describe("prepareTrack", () => {
         const result = await prepareTrack(mockEnv, sandboxId, sourceTrack)
 
         expect(result).toEqual(track)
-        expect(mockGetSandbox).toHaveBeenCalledWith(mockEnv.SANDBOX, sandboxId)
+        expect(mockGetSandbox).toHaveBeenCalledWith(sandboxId)
         expect(mockExec).toHaveBeenNthCalledWith(
             1,
             "rm -f '/tmp/video-1.m4a' '/tmp/video-1.m4a'.part",
@@ -795,7 +792,7 @@ describe("destroySandbox", () => {
 
         await destroySandbox(mockEnv, sandboxId)
 
-        expect(mockGetSandbox).toHaveBeenCalledWith(mockEnv.SANDBOX, sandboxId)
+        expect(mockGetSandbox).toHaveBeenCalledWith(sandboxId)
         expect(mockDestroy).toHaveBeenCalledOnce()
     })
 })

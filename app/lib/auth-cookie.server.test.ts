@@ -241,10 +241,10 @@ describe("auth-cookie", () => {
     })
 })
 
-describe("cookie attributes in workers", () => {
-    it("should always set Secure flag for Workers environment", async () => {
-        // In Cloudflare Workers, HTTPS is always enforced,
-        // so Secure should always be present
+describe("cookie attributes in production", () => {
+    it("should default to Secure flag for production cookies", async () => {
+        // In production, HTTPS is enforced,
+        // so Secure should always be present by default
         const cookieString = await serializeAuthCookie(mockTokens, mockEnv)
 
         expect(cookieString).toContain("Secure")

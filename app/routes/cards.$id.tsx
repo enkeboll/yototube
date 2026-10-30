@@ -40,9 +40,9 @@ import {
     DialogTrigger,
 } from "~/components/ui/dialog"
 import {Input} from "~/components/ui/input"
+import {getAppEnv} from "~/lib/app-context"
 import {getToken} from "~/lib/auth.server"
 import {getCardCoverUrl} from "~/lib/card-utils"
-import {cloudflareContext} from "~/lib/cloudflare-context"
 import {getNextChapterKey, stripNullValues} from "~/lib/import-utils"
 import {logger} from "~/lib/logger.server"
 import {EVENT, telemetry} from "~/lib/telemetry.server"
@@ -70,7 +70,7 @@ export function meta({
 export async function loader({params, request, context}: Route.LoaderArgs) {
     const cardId = params.id
     const {sdk} = context.get(authContext)
-    const {env} = context.get(cloudflareContext)
+    const env = getAppEnv(context)
 
     try {
         // Fetch current card and all cards in parallel
@@ -255,8 +255,7 @@ export async function action({params, request, context}: Route.ActionArgs) {
         startedAt,
     })
 
-    // Get env from Cloudflare context
-    const {env} = context.get(cloudflareContext)
+    const env = getAppEnv(context)
 
     try {
         const {sdk} = context.get(authContext)

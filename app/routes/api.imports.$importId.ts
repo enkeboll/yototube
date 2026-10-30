@@ -1,11 +1,12 @@
+import {getAppEnv} from "~/lib/app-context"
 import {isAuthenticated} from "~/lib/auth.server"
-import {cloudflareContext} from "~/lib/cloudflare-context"
+import {importWorkflowManager} from "~/lib/import-workflow.server"
 import {logger} from "~/lib/logger.server"
 
 import type {Route} from "./+types/api.imports.$importId"
 
 export async function loader({params, request, context}: Route.LoaderArgs) {
-    const {env} = context.get(cloudflareContext)
+    const env = getAppEnv(context)
 
     const authenticated = await isAuthenticated(request, env)
     if (!authenticated) {
@@ -15,7 +16,7 @@ export async function loader({params, request, context}: Route.LoaderArgs) {
     const {importId} = params
 
     try {
-        const instance = await env.IMPORT_WORKFLOW.get(importId)
+        const instance = await importWorkflowManager.get(importId)
         const instanceStatus = await instance.status()
 
         return Response.json({

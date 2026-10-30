@@ -1,5 +1,3 @@
-import {DurableObject} from "cloudflare:workers"
-
 import type {ImportStreamEvent, ImportSuccess} from "~/lib/import"
 import type {ImportProgress as ImportProgressState} from "~/lib/import-utils"
 
@@ -8,9 +6,12 @@ type Subscriber = {
     importId: string
 }
 
-class ImportProgress extends DurableObject<Env> {
+class ImportProgress {
     private subscribers = new Set<Subscriber>()
     private encoder = new TextEncoder()
+    private latestEvent?: ImportStreamEvent
+
+    constructor(readonly importId: string) {}
 
     async reportProgress(progress: ImportProgressState): Promise<void> {
         await this.publish({type: "progress", ...progress})
@@ -32,13 +33,11 @@ class ImportProgress extends DurableObject<Env> {
     }
 
     async fetch(request: Request): Promise<Response> {
-        const importId = request.headers.get("X-Import-Id")
+        const importId = request.headers.get("X-Import-Id") ?? this.importId
         if (!importId) {
             return new Response("Missing import ID", {status: 400})
         }
 
-        const latestEvent =
-            await this.ctx.storage.get<ImportStreamEvent>("event")
         let subscriber: Subscriber | undefined
 
         const stream = new ReadableStream<Uint8Array>({
@@ -47,9 +46,9 @@ class ImportProgress extends DurableObject<Env> {
                 this.subscribers.add(subscriber)
                 this.enqueue(subscriber, {type: "started", importId})
 
-                if (latestEvent) {
-                    this.enqueue(subscriber, latestEvent)
-                    if (this.isTerminal(latestEvent)) {
+                if (this.latestEvent) {
+                    this.enqueue(subscriber, this.latestEvent)
+                    if (this.isTerminal(this.latestEvent)) {
                         controller.close()
                         this.subscribers.delete(subscriber)
                     }
@@ -72,7 +71,7 @@ class ImportProgress extends DurableObject<Env> {
     }
 
     private async publish(event: ImportStreamEvent): Promise<void> {
-        await this.ctx.storage.put("event", event)
+        this.latestEvent = event
 
         for (const subscriber of this.subscribers) {
             try {
@@ -91,12 +90,16 @@ class ImportProgress extends DurableObject<Env> {
         subscriber: Subscriber,
         event: ImportStreamEvent | {type: "started"; importId: string},
     ): void {
-        subscriber.controller.enqueue(
-            this.encoder.encode(
-                `id: ${subscriber.importId}\n` +
-                    `data: ${JSON.stringify(event)}\n\n`,
-            ),
-        )
+        try {
+            subscriber.controller.enqueue(
+                this.encoder.encode(
+                    `id: ${subscriber.importId}\n` +
+                        `data: ${JSON.stringify(event)}\n\n`,
+                ),
+            )
+        } catch {
+            this.subscribers.delete(subscriber)
+        }
     }
 
     private isTerminal(event: ImportStreamEvent): boolean {
@@ -104,4 +107,25 @@ class ImportProgress extends DurableObject<Env> {
     }
 }
 
-export {ImportProgress}
+// Global registry of progress instances
+const progressInstances = new Map<string, ImportProgress>()
+
+function getImportProgress(importId: string): ImportProgress {
+    let instance = progressInstances.get(importId)
+    if (!instance) {
+        instance = new ImportProgress(importId)
+        progressInstances.set(importId, instance)
+    }
+    return instance
+}
+
+const importProgressManager = {
+    getByName(importId: string): ImportProgress {
+        return getImportProgress(importId)
+    },
+    _clear(): void {
+        progressInstances.clear()
+    },
+}
+
+export {getImportProgress, ImportProgress, importProgressManager}

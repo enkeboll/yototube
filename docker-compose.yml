@@ -1,0 +1,16 @@
+services:
+    yototube:
+        build: .
+        image: yototube:latest
+        container_name: yototube
+        restart: unless-stopped
+        ports:
+            - "3000:3000"
+        environment:
+            - PORT=3000
+            - NODE_ENV=production
+            - YOTO_AUTH_SECRET=${YOTO_AUTH_SECRET}
+            - RESEND_API_KEY=${RESEND_API_KEY:-}
+        env_file:
+            - path: .env
+              required: false

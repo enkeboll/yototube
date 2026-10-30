@@ -1,5 +1,5 @@
 // YouTube URL parsing utilities and types
-// Note: Actual yt-dlp operations moved to sandbox (workers/app.ts)
+// Note: Actual yt-dlp operations handled in sandbox.server.ts
 
 // Types
 type YouTubeChapter = {

@@ -1,7 +1,9 @@
+import {getAppEnv} from "~/lib/app-context"
 import {isAuthenticated, requireAuthCore} from "~/lib/auth.server"
-import {cloudflareContext} from "~/lib/cloudflare-context"
 import type {Import} from "~/lib/import"
 import {createImportCredential} from "~/lib/import-credential.server"
+import {importProgressManager} from "~/lib/import-progress.server"
+import {importWorkflowManager} from "~/lib/import-workflow.server"
 import {EVENT, telemetry} from "~/lib/telemetry.server"
 import {
     getCanonicalYouTubeUrl,
@@ -13,8 +15,7 @@ import {importSearchParamsSchema} from "~/schemas/import"
 import type {Route} from "./+types/api.import.$cardId"
 
 export async function loader({params, request, context}: Route.LoaderArgs) {
-    // Get env from Cloudflare context
-    const {env} = context.get(cloudflareContext)
+    const env = getAppEnv(context)
 
     // Use isAuthenticated instead of requireAuth to avoid redirects
     // SSE endpoints should return 401, not redirect (which causes EventSource to hang)
@@ -51,7 +52,8 @@ export async function loader({params, request, context}: Route.LoaderArgs) {
 
     const existingImportId = request.headers.get("Last-Event-ID")
     if (existingImportId) {
-        const progressInstance = env.IMPORT_PROGRESS.getByName(existingImportId)
+        const progressInstance =
+            importProgressManager.getByName(existingImportId)
         return progressInstance.fetch(
             createProgressRequest(request, existingImportId),
         )
@@ -71,11 +73,11 @@ export async function loader({params, request, context}: Route.LoaderArgs) {
         sourceType: getYouTubeUrlType(youtubeUrl),
         splitByChapters,
     }
-    const progressInstance = env.IMPORT_PROGRESS.getByName(cardImport.id)
+    const progressInstance = importProgressManager.getByName(cardImport.id)
 
     try {
         const credential = await createImportCredential(token, env)
-        await env.IMPORT_WORKFLOW.create({
+        await importWorkflowManager.create({
             id: cardImport.id,
             params: {...cardImport, credential},
         })

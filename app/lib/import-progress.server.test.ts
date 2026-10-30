@@ -1,30 +1,12 @@
-import {describe, expect, it, vi} from "vitest"
+import {describe, expect, it} from "vitest"
 
 import type {ImportProgress as ImportProgressState} from "~/lib/import-utils"
-import {createMockEnv} from "~/tests/mocks"
 
-vi.mock("cloudflare:workers", () => ({
-    DurableObject: class {
-        protected ctx: DurableObjectState
+import {ImportProgress} from "./import-progress.server"
 
-        constructor(ctx: DurableObjectState) {
-            this.ctx = ctx
-        }
-    },
-}))
-
-import {ImportProgress} from "./import-progress"
-
-const createProgress = () => {
-    const get = vi.fn()
-    const put = vi.fn()
-    get.mockResolvedValue(undefined)
-    const ctx = {
-        storage: {get, put},
-    } as unknown as DurableObjectState
-    const progress = new ImportProgress(ctx, createMockEnv())
-
-    return {get, progress, put}
+const createProgress = (importId = "import-1") => {
+    const progress = new ImportProgress(importId)
+    return {progress}
 }
 
 const readEvent = async (reader: ReadableStreamDefaultReader<Uint8Array>) => {
@@ -40,27 +22,8 @@ const readEvent = async (reader: ReadableStreamDefaultReader<Uint8Array>) => {
 }
 
 describe("ImportProgress", () => {
-    it("persists reported progress", async () => {
-        const {progress, put} = createProgress()
-        const update: ImportProgressState = {
-            phase: "importing",
-            percent: 45,
-            total: 3,
-            prepared: 3,
-            uploaded: 1,
-            ready: 0,
-        }
-
-        await progress.reportProgress(update)
-
-        expect(put).toHaveBeenCalledWith("event", {
-            type: "progress",
-            ...update,
-        })
-    })
-
     it("broadcasts progress and completion to an SSE subscriber", async () => {
-        const {progress} = createProgress()
+        const {progress} = createProgress("import-1")
         const response = await progress.fetch(
             new Request("https://example.com/events", {
                 headers: {"X-Import-Id": "import-1"},
@@ -115,16 +78,17 @@ describe("ImportProgress", () => {
     })
 
     it("replays the latest event to a new subscriber", async () => {
-        const {get, progress} = createProgress()
-        get.mockResolvedValue({
-            type: "progress",
+        const {progress} = createProgress("import-1")
+        const update: ImportProgressState = {
             phase: "importing",
             percent: 45,
             total: 3,
             prepared: 3,
             uploaded: 1,
             ready: 0,
-        })
+        }
+
+        await progress.reportProgress(update)
 
         const response = await progress.fetch(
             new Request("https://example.com/events", {
@@ -133,21 +97,16 @@ describe("ImportProgress", () => {
         )
         const reader = response.body!.getReader()
 
-        await readEvent(reader)
+        await readEvent(reader) // "started"
         await expect(readEvent(reader)).resolves.toEqual({
             type: "progress",
-            phase: "importing",
-            percent: 45,
-            total: 3,
-            prepared: 3,
-            uploaded: 1,
-            ready: 0,
+            ...update,
         })
         await reader.cancel()
     })
 
-    it("requires an import ID for subscriptions", async () => {
-        const {progress} = createProgress()
+    it("requires an import ID for subscriptions if not set on instance", async () => {
+        const progress = new ImportProgress("")
 
         const response = await progress.fetch(
             new Request("https://example.com/events"),

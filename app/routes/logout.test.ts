@@ -7,9 +7,10 @@ vi.mock("~/lib/auth.server", () => ({
     logout: (...args: unknown[]) => mockLogout(...args),
 }))
 
-// Mock the cloudflare context module
-vi.mock("~/lib/cloudflare-context", () => ({
-    cloudflareContext: Symbol("cloudflareContext"),
+// Mock the app context module
+vi.mock("~/lib/app-context", () => ({
+    appContext: Symbol("appContext"),
+    getAppEnv: () => mockEnv,
 }))
 
 // Import after mocks are set up

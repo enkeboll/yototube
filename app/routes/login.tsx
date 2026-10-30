@@ -16,8 +16,8 @@ import {
     CardHeader,
     CardTitle,
 } from "~/components/ui/card"
+import {getAppEnv} from "~/lib/app-context"
 import {completeLogin, initiateLogin, status} from "~/lib/auth.server"
-import {cloudflareContext} from "~/lib/cloudflare-context"
 
 import type {Route} from "./+types/login"
 
@@ -41,7 +41,7 @@ export function meta() {
 
 // Redirect to dashboard if already logged in
 export async function loader({request, context}: Route.LoaderArgs) {
-    const {env} = context.get(cloudflareContext)
+    const env = getAppEnv(context)
 
     const authStatus = await status(request, env)
 
@@ -57,7 +57,7 @@ export async function action({
     request,
     context,
 }: Route.ActionArgs): Promise<ActionData | Response> {
-    const {env} = context.get(cloudflareContext)
+    const env = getAppEnv(context)
 
     const formData = await request.formData()
     const intent = formData.get("intent")

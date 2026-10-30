@@ -1,11 +1,10 @@
-// Sandbox client for calling yt-dlp operations via Durable Object
-// Uses the sandbox endpoints defined in workers/app.ts
+// Sandbox client for executing yt-dlp, ffmpeg, and curl operations locally or in container
 
-import {getSandbox} from "@cloudflare/sandbox"
 import shellEscape from "shell-escape"
 
 import type {AudioTrack} from "./import"
 import {logger} from "./logger.server"
+import {getSandbox} from "./sandbox-executor.server"
 import type {
     YouTubeChapter,
     YouTubePlaylistInfo,
@@ -132,7 +131,7 @@ async function getPlaylistInfo(
         throw new Error("Invalid YouTube URL")
     }
 
-    const sandbox = getSandbox(env.SANDBOX, sandboxId)
+    const sandbox = getSandbox(sandboxId)
     const escapedUrl = escapeShellArg(url)
 
     // Detect if URL is a playlist
@@ -214,7 +213,7 @@ async function downloadVideo(
     video: YouTubeVideo,
 ): Promise<DownloadedAudio> {
     const startedAt = Date.now()
-    const sandbox = getSandbox(env.SANDBOX, sandboxId)
+    const sandbox = getSandbox(sandboxId)
     const filename = `${video.id}.m4a`
     const path = `/tmp/${filename}`
     const contentType = "audio/mp4"
@@ -293,7 +292,7 @@ async function splitAudio(
         }
     })
 
-    const sandbox = getSandbox(env.SANDBOX, sandboxId)
+    const sandbox = getSandbox(sandboxId)
     const escapedSourcePath = escapeShellArg(source.path)
     const escapedOutputPaths = segments.map(segment =>
         escapeShellArg(segment.audio.path),
@@ -441,7 +440,7 @@ async function prepareAudioBatch(
     if (inputs.length === 0) return []
 
     const startedAt = Date.now()
-    const sandbox = getSandbox(env.SANDBOX, sandboxId)
+    const sandbox = getSandbox(sandboxId)
 
     try {
         const result = await sandbox.exec(
@@ -601,7 +600,7 @@ async function uploadTrack(
         throw new Error("Invalid Yoto upload URL")
     }
 
-    const sandbox = getSandbox(env.SANDBOX, sandboxId)
+    const sandbox = getSandbox(sandboxId)
     const escapedPath = escapeShellArg(track.path)
     const uploadResult = await sandbox.exec(
         `curl --fail --silent --show-error ` +
@@ -623,7 +622,7 @@ async function removeTrack(
     sandboxId: string,
     track: DownloadedAudio,
 ): Promise<void> {
-    const sandbox = getSandbox(env.SANDBOX, sandboxId)
+    const sandbox = getSandbox(sandboxId)
     const escapedPath = escapeShellArg(track.path)
     const removeResult = await sandbox.exec(`rm -f ${escapedPath}`)
 
@@ -635,7 +634,7 @@ async function removeTrack(
 }
 
 async function destroySandbox(env: Env, sandboxId: string): Promise<void> {
-    const sandbox = getSandbox(env.SANDBOX, sandboxId)
+    const sandbox = getSandbox(sandboxId)
     await sandbox.destroy()
 }
 

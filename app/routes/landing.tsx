@@ -3,8 +3,8 @@ import {Link, redirect} from "react-router"
 
 import {Button} from "~/components/ui/button"
 import {Card, CardContent, CardHeader, CardTitle} from "~/components/ui/card"
+import {getAppEnv} from "~/lib/app-context"
 import {status} from "~/lib/auth.server"
-import {cloudflareContext} from "~/lib/cloudflare-context"
 
 import type {Route} from "./+types/landing"
 
@@ -20,7 +20,7 @@ export function meta() {
 
 // Redirect to cards dashboard if already logged in
 export async function loader({request, context}: Route.LoaderArgs) {
-    const {env} = context.get(cloudflareContext)
+    const env = getAppEnv(context)
     const authStatus = await status(request, env)
 
     if (authStatus.valid) {

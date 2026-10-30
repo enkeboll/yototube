@@ -334,8 +334,7 @@ describe("processAudio", () => {
             sha256: "b".repeat(64),
         }
         let resolveSecondPreparation:
-            | ((tracks: (typeof secondPreparedTrack)[]) => void)
-            | undefined
+            ((tracks: (typeof secondPreparedTrack)[]) => void) | undefined
         const secondPreparation = new Promise<(typeof secondPreparedTrack)[]>(
             resolve => {
                 resolveSecondPreparation = resolve

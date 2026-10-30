@@ -1,8 +1,8 @@
 import type {YotoSdk} from "@yotoplay/yoto-sdk"
 import {createContext, type MiddlewareFunction, redirect} from "react-router"
 
+import {getAppEnv} from "~/lib/app-context"
 import {getAuthenticatedSdk, status} from "~/lib/auth.server"
-import {cloudflareContext} from "~/lib/cloudflare-context"
 
 type AuthContext = {
     sdk: YotoSdk
@@ -17,8 +17,7 @@ export const authMiddleware: MiddlewareFunction<Response> = async (
     {request, context},
     next,
 ) => {
-    // Get env from Cloudflare context
-    const {env} = context.get(cloudflareContext)
+    const env = getAppEnv(context)
 
     const authStatus = await status(request, env)
 

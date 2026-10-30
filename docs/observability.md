@@ -31,7 +31,7 @@ logger.info({
 })
 ```
 
-Cloudflare and Sandbox SDK logs are emitted by dependencies and do not pass
+External tool output (e.g. from yt-dlp or ffmpeg) is captured and logged
 through the application logger.
 
 ### Telemetry
@@ -61,7 +61,7 @@ telemetry.info(EVENT.IMPORT.COMPLETED, {
 ```
 
 Telemetry currently writes structured records through the logger. Both
-diagnostic logs and telemetry events are stored in Cloudflare Workers Logs.
+diagnostic logs and telemetry events are emitted as JSON to standard output.
 
 The [`EVENT` object](../app/lib/telemetry.server.ts) is the canonical event
 catalog. Do not maintain a duplicate event list in documentation.
@@ -153,18 +153,10 @@ To add a diagnostic log:
 During local development, records appear in the terminal running
 `npm run dev`.
 
-In production:
+In production (Docker / Synology NAS):
 
-1. Open the Cloudflare dashboard.
-2. Select **Workers & Pages**.
-3. Select the `yoto` Worker.
-4. Open **Observability**.
-5. Filter or group records by `event`, `message`, `level`, `reason`, `cardId`,
-   or `importId`.
-
-Cloudflare automatic tracing is enabled at 100% sampling during its initial
-evaluation. Traces include Worker handlers, fetch calls, and binding calls
-without custom application instrumentation.
+- View container logs via Docker CLI: `docker logs -f yototube`
+- Or via Synology NAS **Container Manager** > **Containers** > `yototube` > **Log**.
 
 ## Future Integrations
 

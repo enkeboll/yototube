@@ -9,9 +9,10 @@ vi.mock("resend", () => ({
     },
 }))
 
-// Mock the cloudflare context module
-vi.mock("~/lib/cloudflare-context", () => ({
-    cloudflareContext: Symbol("cloudflareContext"),
+// Mock the app context module
+vi.mock("~/lib/app-context", () => ({
+    appContext: Symbol("appContext"),
+    getAppEnv: () => mockEnv,
 }))
 
 // Import after mocks are set up

@@ -3,7 +3,7 @@ import {Resend} from "resend"
 import {z} from "zod"
 
 import {FeedbackEmail} from "~/components/FeedbackEmail"
-import {cloudflareContext} from "~/lib/cloudflare-context"
+import {getAppEnv} from "~/lib/app-context"
 import {logger} from "~/lib/logger.server"
 import {isValidOrigin} from "~/lib/security.server"
 import {parseFormData} from "~/lib/validation.server"
@@ -12,9 +12,7 @@ import {feedbackSchema} from "~/schemas/feedback"
 import type {Route} from "./+types/api.feedback"
 
 type FeedbackResponse =
-    | {success: true}
-    | {error: string}
-    | {errors: Record<string, string[]>}
+    {success: true} | {error: string} | {errors: Record<string, string[]>}
 
 const categoryLabels: Record<string, string> = {
     bug: "Bug Report",
@@ -27,7 +25,7 @@ export async function action({request, context}: Route.ActionArgs) {
         return Response.json({error: "Forbidden"}, {status: 403})
     }
 
-    const {env} = context.get(cloudflareContext)
+    const env = getAppEnv(context)
 
     const formData = await request.formData()
     const result = parseFormData(formData, feedbackSchema)

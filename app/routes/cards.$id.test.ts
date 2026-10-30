@@ -1,6 +1,6 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest"
 
-import {cloudflareContext} from "~/lib/cloudflare-context"
+import {appContext} from "~/lib/app-context"
 import {EVENT} from "~/lib/telemetry.server"
 import {authContext} from "~/middleware/auth.server"
 
@@ -68,7 +68,7 @@ describe("cards.$id loader", () => {
                     return {sdk}
                 }
 
-                if (key === cloudflareContext) {
+                if (key === appContext) {
                     return {env}
                 }
 
@@ -140,7 +140,7 @@ describe("cards.$id action", () => {
                     return {sdk}
                 }
 
-                if (key === cloudflareContext) {
+                if (key === appContext) {
                     return {env: {} as Env}
                 }
 
@@ -235,7 +235,7 @@ describe("cards.$id action", () => {
                     return {sdk}
                 }
 
-                if (key === cloudflareContext) {
+                if (key === appContext) {
                     return {env: {} as Env}
                 }
 
@@ -301,7 +301,7 @@ describe("cards.$id action", () => {
                     return {sdk: {}}
                 }
 
-                if (key === cloudflareContext) {
+                if (key === appContext) {
                     return {env: {} as Env}
                 }
 
@@ -361,7 +361,7 @@ describe("cards.$id action", () => {
                     return {sdk}
                 }
 
-                if (key === cloudflareContext) {
+                if (key === appContext) {
                     return {env: {} as Env}
                 }
 
@@ -419,7 +419,7 @@ describe("cards.$id action", () => {
         const context = {
             get: vi.fn(key => {
                 if (key === authContext) return {sdk}
-                if (key === cloudflareContext) return {env: {} as Env}
+                if (key === appContext) return {env: {} as Env}
                 throw new Error("Unexpected context")
             }),
         }
@@ -487,7 +487,7 @@ describe("cards.$id action", () => {
         const context = {
             get: vi.fn(key => {
                 if (key === authContext) return {sdk}
-                if (key === cloudflareContext) return {env: {} as Env}
+                if (key === appContext) return {env: {} as Env}
                 throw new Error("Unexpected context")
             }),
         }
@@ -553,7 +553,7 @@ describe("cards.$id action", () => {
         const context = {
             get: vi.fn(key => {
                 if (key === authContext) return {sdk}
-                if (key === cloudflareContext) return {env: {} as Env}
+                if (key === appContext) return {env: {} as Env}
                 throw new Error("Unexpected context")
             }),
         }
@@ -591,7 +591,7 @@ describe("cards.$id action", () => {
         const context = {
             get: vi.fn(key => {
                 if (key === authContext) return {sdk}
-                if (key === cloudflareContext) return {env: {} as Env}
+                if (key === appContext) return {env: {} as Env}
                 throw new Error("Unexpected context")
             }),
         }
@@ -638,7 +638,7 @@ describe("cards.$id action", () => {
         const context = {
             get: vi.fn(key => {
                 if (key === authContext) return {sdk}
-                if (key === cloudflareContext) return {env: {} as Env}
+                if (key === appContext) return {env: {} as Env}
                 throw new Error("Unexpected context")
             }),
         }
@@ -700,7 +700,7 @@ describe("cards.$id action", () => {
         const context = {
             get: vi.fn(key => {
                 if (key === authContext) return {sdk}
-                if (key === cloudflareContext) return {env: {} as Env}
+                if (key === appContext) return {env: {} as Env}
                 throw new Error("Unexpected context")
             }),
         }
@@ -738,7 +738,7 @@ describe("cards.$id action", () => {
         const context = {
             get: vi.fn(key => {
                 if (key === authContext) return {sdk: {}}
-                if (key === cloudflareContext) return {env: {} as Env}
+                if (key === appContext) return {env: {} as Env}
                 throw new Error("Unexpected context")
             }),
         }

@@ -13,8 +13,7 @@ import type {YotoIcon} from "~/lib/yoto-icons.server"
 import type {CommunityIcon} from "~/lib/yotoicons-community.server"
 
 type IconSelection =
-    | ({type: "yoto"} & YotoIcon)
-    | ({type: "community"} & CommunityIcon)
+    ({type: "yoto"} & YotoIcon) | ({type: "community"} & CommunityIcon)
 
 type IconPickerContentProps = {
     onSelect: (icon: IconSelection) => void
