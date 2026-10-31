@@ -1,7 +1,8 @@
 <script lang="ts">
+    import {enhance} from "$app/forms"
     import {ArrowDownNarrowWide, Plus} from "@lucide/svelte"
     import CardCover from "$lib/components/CardCover.svelte"
-    import {Button} from "$lib/components/ui/button"
+    import {Button, buttonVariants} from "$lib/components/ui/button"
     import {Card, CardContent} from "$lib/components/ui/card"
     import {
         Dialog,
@@ -83,14 +84,15 @@
                 class="flex-1"
             />
             <DropdownMenu>
-                <DropdownMenuTrigger>
-                    <Button
-                        variant="outline"
-                        size="icon"
-                        aria-label="Sort cards"
-                    >
-                        <ArrowDownNarrowWide class="h-4 w-4" />
-                    </Button>
+                <DropdownMenuTrigger
+                    class={buttonVariants({
+                        variant: "outline",
+                        size: "icon",
+                        class: "cursor-pointer",
+                    })}
+                    aria-label="Sort cards"
+                >
+                    <ArrowDownNarrowWide class="h-4 w-4" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                     <DropdownMenuLabel>Sort by</DropdownMenuLabel>
@@ -117,11 +119,13 @@
             </DropdownMenu>
 
             <Dialog bind:open={dialogOpen}>
-                <DialogTrigger>
-                    <Button>
-                        <Plus class="h-4 w-4" />
-                        Create Card
-                    </Button>
+                <DialogTrigger
+                    class={buttonVariants({
+                        class: "cursor-pointer",
+                    })}
+                >
+                    <Plus class="h-4 w-4" />
+                    Create Card
                 </DialogTrigger>
                 <DialogContent>
                     <DialogHeader>
@@ -133,7 +137,20 @@
                     <form
                         method="post"
                         action="?/createCard"
-                        onsubmit={() => (isCreating = true)}
+                        use:enhance={() => {
+                            isCreating = true
+                            return async ({update, result}) => {
+                                await update()
+                                isCreating = false
+                                if (
+                                    result.type === "success" ||
+                                    result.type === "redirect"
+                                ) {
+                                    dialogOpen = false
+                                    cardName = ""
+                                }
+                            }
+                        }}
                     >
                         <div class="grid gap-4 py-4">
                             <div class="grid gap-2">
@@ -143,7 +160,6 @@
                                     name="cardName"
                                     placeholder="Enter card name..."
                                     bind:value={cardName}
-                                    disabled={isCreating}
                                     autoComplete="off"
                                     required
                                 />

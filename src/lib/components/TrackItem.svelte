@@ -21,7 +21,7 @@
         AlertDialogTitle,
         AlertDialogTrigger,
     } from "$lib/components/ui/alert-dialog"
-    import {Button} from "$lib/components/ui/button"
+    import {Button, buttonVariants} from "$lib/components/ui/button"
     import {Checkbox} from "$lib/components/ui/checkbox"
     import {
         Dialog,
@@ -110,23 +110,20 @@
     {/if}
 
     <Dialog open={isIconDialogOpen} onOpenChange={onIconDialogChange}>
-        <DialogTrigger>
-            <button
-                type="button"
-                class="shrink-0 p-2 rounded-md bg-zinc-900 hover:bg-zinc-700 transition-colors cursor-pointer"
-                aria-label="Change icon for {track.title}"
-            >
-                {#if track.iconUrl}
-                    <img
-                        src={track.iconUrl}
-                        alt=""
-                        class="w-8 h-8"
-                        style="image-rendering: pixelated;"
-                    />
-                {:else}
-                    <div class="w-8 h-8 bg-zinc-700 rounded"></div>
-                {/if}
-            </button>
+        <DialogTrigger
+            class="shrink-0 p-2 rounded-md bg-zinc-900 hover:bg-zinc-700 transition-colors cursor-pointer"
+            aria-label="Change icon for {track.title}"
+        >
+            {#if track.iconUrl}
+                <img
+                    src={track.iconUrl}
+                    alt=""
+                    class="w-8 h-8"
+                    style="image-rendering: pixelated;"
+                />
+            {:else}
+                <div class="w-8 h-8 bg-zinc-700 rounded"></div>
+            {/if}
         </DialogTrigger>
         <DialogContent class="sm:max-w-lg">
             {@render iconPicker?.()}
@@ -156,16 +153,16 @@
         </Button>
 
         <AlertDialog>
-            <AlertDialogTrigger>
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    class="text-muted-foreground hover:text-destructive"
-                    disabled={isBusy || isReordering}
-                    aria-label="Delete track: {track.title}"
-                >
-                    <Trash2 class="h-4 w-4" />
-                </Button>
+            <AlertDialogTrigger
+                class={buttonVariants({
+                    variant: "ghost",
+                    size: "sm",
+                    class: "text-muted-foreground hover:text-destructive cursor-pointer",
+                })}
+                disabled={isBusy || isReordering}
+                aria-label="Delete track: {track.title}"
+            >
+                <Trash2 class="h-4 w-4" />
             </AlertDialogTrigger>
             <AlertDialogContent>
                 <AlertDialogHeader>

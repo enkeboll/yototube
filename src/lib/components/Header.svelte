@@ -24,29 +24,29 @@
             </a>
 
             <DropdownMenu>
-                <DropdownMenuTrigger>
-                    <button
-                        type="button"
-                        class="rounded-full focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 cursor-pointer"
-                        aria-label="User menu"
-                    >
-                        <Avatar>
-                            <AvatarFallback>
-                                <User class="h-4 w-4" />
-                            </AvatarFallback>
-                        </Avatar>
-                    </button>
+                <DropdownMenuTrigger
+                    class="rounded-full focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 cursor-pointer"
+                    aria-label="User menu"
+                >
+                    <Avatar>
+                        <AvatarFallback>
+                            <User class="h-4 w-4" />
+                        </AvatarFallback>
+                    </Avatar>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                     <form action="/logout" method="post" class="w-full">
-                        <DropdownMenuItem>
-                            <button
-                                type="submit"
-                                class="w-full flex items-center gap-2 cursor-pointer text-left"
-                            >
-                                <LogOut class="h-4 w-4" />
-                                Logout
-                            </button>
+                        <DropdownMenuItem
+                            class="cursor-pointer"
+                            onclick={(e: MouseEvent) => {
+                                const form = (
+                                    e.currentTarget as HTMLElement
+                                )?.closest("form")
+                                form?.requestSubmit()
+                            }}
+                        >
+                            <LogOut class="h-4 w-4" />
+                            <span>Logout</span>
                         </DropdownMenuItem>
                     </form>
                 </DropdownMenuContent>

@@ -69,14 +69,11 @@
 </script>
 
 <Dialog bind:open>
-    <DialogTrigger>
-        <button
-            type="button"
-            class="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-        >
-            <MessageSquare class="h-4 w-4" />
-            Feedback
-        </button>
+    <DialogTrigger
+        class="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+    >
+        <MessageSquare class="h-4 w-4" />
+        Feedback
     </DialogTrigger>
 
     <DialogContent class="sm:max-w-md">

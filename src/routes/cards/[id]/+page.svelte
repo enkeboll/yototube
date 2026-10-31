@@ -33,7 +33,7 @@
         AlertDialogTitle,
         AlertDialogTrigger,
     } from "$lib/components/ui/alert-dialog"
-    import {Button} from "$lib/components/ui/button"
+    import {Button, buttonVariants} from "$lib/components/ui/button"
     import {Card, CardContent} from "$lib/components/ui/card"
     import type {ActionData, PageData} from "./$types"
 
@@ -346,15 +346,15 @@
                     </Button>
 
                     <AlertDialog>
-                        <AlertDialogTrigger>
-                            <Button
-                                variant="ghost"
-                                class="text-destructive hover:bg-destructive/10"
-                                disabled={isBusy}
-                            >
-                                <Trash2 class="h-4 w-4" />
-                                Delete Card
-                            </Button>
+                        <AlertDialogTrigger
+                            class={buttonVariants({
+                                variant: "ghost",
+                                class: "text-destructive hover:bg-destructive/10 cursor-pointer",
+                            })}
+                            disabled={isBusy}
+                        >
+                            <Trash2 class="h-4 w-4" />
+                            Delete Card
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                             <AlertDialogHeader>
@@ -419,15 +419,16 @@
                     </Button>
 
                     <AlertDialog>
-                        <AlertDialogTrigger>
-                            <Button
-                                size="sm"
-                                variant="destructive"
-                                disabled={selectedKeys.size === 0 || isBusy}
-                            >
-                                <Trash2 class="h-4 w-4 mr-1" />
-                                Delete Selected
-                            </Button>
+                        <AlertDialogTrigger
+                            class={buttonVariants({
+                                variant: "destructive",
+                                size: "sm",
+                                class: "cursor-pointer",
+                            })}
+                            disabled={selectedKeys.size === 0 || isBusy}
+                        >
+                            <Trash2 class="h-4 w-4 mr-1" />
+                            Delete Selected
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                             <AlertDialogHeader>
