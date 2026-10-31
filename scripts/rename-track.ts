@@ -36,7 +36,7 @@ const TOKEN_PATH = join(CONFIG_PATH, "auth.json")
 
 const AUTH_CONFIG = {
     domain: "login.yotoplay.com",
-    clientId: process.env.YOTO_CLIENT_ID || "PhKouPhz6NPVaWLtyeiEwjfB7m8sVR77",
+    clientId: process.env.YOTO_CLIENT_ID ?? "",
     audience: "https://api.yotoplay.com",
 }
 

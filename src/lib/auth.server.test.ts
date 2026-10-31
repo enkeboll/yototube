@@ -82,7 +82,7 @@ describe("initiateLogin", () => {
         }
         mockAuth.initiate.mockResolvedValue(deviceCodeResult)
 
-        const result = await initiateLogin()
+        const result = await initiateLogin(mockEnv)
 
         expect(mockAuth.initiate).toHaveBeenCalledWith("offline_access")
         expect(result).toEqual(deviceCodeResult)
@@ -99,7 +99,7 @@ describe("initiateLogin", () => {
         }
         mockAuth.initiate.mockResolvedValue(errorResult)
 
-        const result = await initiateLogin()
+        const result = await initiateLogin(mockEnv)
 
         expect(result).toEqual(errorResult)
         expect(console.error).toHaveBeenCalledWith(

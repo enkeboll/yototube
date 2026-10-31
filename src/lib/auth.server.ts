@@ -16,7 +16,6 @@ import {
 } from "./auth-cookie.server"
 import {EVENT, telemetry} from "./telemetry.server"
 
-const DEFAULT_CLIENT_ID = "PhKouPhz6NPVaWLtyeiEwjfB7m8sVR77"
 const AUTH_DOMAIN = "login.yotoplay.com"
 const AUTH_AUDIENCE = "https://api.yotoplay.com"
 const AUTH_SCOPE = "offline_access"
@@ -28,8 +27,12 @@ let _sdk: YotoSdk | null = null
 let _sdkToken: string | null = null
 
 const getAuth = (env?: Env): DeviceCodeAuth => {
-    const clientId =
-        env?.YOTO_CLIENT_ID || process.env.YOTO_CLIENT_ID || DEFAULT_CLIENT_ID
+    const clientId = env?.YOTO_CLIENT_ID || process.env.YOTO_CLIENT_ID
+    if (!clientId) {
+        throw new Error(
+            "YOTO_CLIENT_ID is not configured. Please register an app at https://yoto.dev and set YOTO_CLIENT_ID in your .env file.",
+        )
+    }
 
     if (!_auth || _authClientId !== clientId) {
         _auth = new DeviceCodeAuth({
@@ -415,8 +418,12 @@ const initiatePkceLogin = async (
 
     const url = new URL(request.url)
     const redirectUri = `${url.origin}/callback`
-    const clientId =
-        env.YOTO_CLIENT_ID || process.env.YOTO_CLIENT_ID || DEFAULT_CLIENT_ID
+    const clientId = env.YOTO_CLIENT_ID || process.env.YOTO_CLIENT_ID
+    if (!clientId) {
+        throw new Error(
+            "YOTO_CLIENT_ID is not configured. Please register an app at https://yoto.dev and set YOTO_CLIENT_ID in your .env file.",
+        )
+    }
 
     const params = new URLSearchParams({
         response_type: "code",
@@ -477,8 +484,14 @@ const completePkceLogin = async (
         }
     }
 
-    const clientId =
-        env.YOTO_CLIENT_ID || process.env.YOTO_CLIENT_ID || DEFAULT_CLIENT_ID
+    const clientId = env.YOTO_CLIENT_ID || process.env.YOTO_CLIENT_ID
+    if (!clientId) {
+        return {
+            success: false,
+            error: "YOTO_CLIENT_ID is not configured. Please set YOTO_CLIENT_ID in your .env file.",
+            clearPkceCookie,
+        }
+    }
 
     try {
         const response = await fetch(`https://${AUTH_DOMAIN}/oauth/token`, {
