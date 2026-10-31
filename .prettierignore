@@ -1,8 +1,8 @@
 dist/
 node_modules/
 
-# React Router generated types
-.react-router/
+# SvelteKit generated types
+.svelte-kit/
 
 # Build output
 build/

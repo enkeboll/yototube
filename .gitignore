@@ -11,5 +11,5 @@ build/
 # env
 .env
 
-# React Router
-.react-router
+# SvelteKit
+.svelte-kit/

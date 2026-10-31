@@ -94,22 +94,22 @@ ghcr.io/<your-github-username>/yototube:latest
 
 ## Available Scripts
 
-| Command              | Description                                               |
-| -------------------- | --------------------------------------------------------- |
-| `npm run dev`        | Starts the Vite development server                        |
-| `npm run build`      | Builds the React Router client and server bundles         |
-| `npm run start`      | Runs the production Node.js server (`react-router-serve`) |
-| `npm run test`       | Runs the Vitest test suite                                |
-| `npm run typecheck`  | Checks TypeScript types                                   |
-| `npm run lint`       | Lints files with ESLint                                   |
-| `npm run format`     | Checks Prettier code formatting                           |
-| `npm run format:fix` | Automatically formats files with Prettier                 |
+| Command              | Description                                                |
+| -------------------- | ---------------------------------------------------------- |
+| `npm run dev`        | Starts the Vite development server                         |
+| `npm run build`      | Builds the SvelteKit client and server bundles             |
+| `npm run start`      | Runs the production Node.js server (`node build/index.js`) |
+| `npm run test`       | Runs the Vitest test suite                                 |
+| `npm run typecheck`  | Checks TypeScript types (`svelte-check`)                   |
+| `npm run lint`       | Lints files with ESLint                                    |
+| `npm run format`     | Checks Prettier code formatting                            |
+| `npm run format:fix` | Automatically formats files with Prettier                  |
 
 ## Tech Stack
 
 - **Runtime:** Node.js 22 / Docker
-- **Framework:** [React Router v7](https://reactrouter.com/) (Framework Mode, SSR)
-- **UI:** [Tailwind CSS v4](https://tailwindcss.com/) + [shadcn/ui](https://ui.shadcn.com/)
+- **Framework:** [SvelteKit](https://kit.svelte.dev/) (Svelte 5 runes, SSR, Node adapter)
+- **UI:** [Tailwind CSS v4](https://tailwindcss.com/) + [Bits UI](https://bits-ui.com/)
 - **Media Tools:** [yt-dlp](https://github.com/yt-dlp/yt-dlp) + [ffmpeg](https://ffmpeg.org/)
 - **Yoto Client:** [@yotoplay/yoto-sdk](https://www.npmjs.com/package/@yotoplay/yoto-sdk)
 - **Authentication:** [@yotoplay/oauth-device-code-flow](https://www.npmjs.com/package/@yotoplay/oauth-device-code-flow) with AES-256-GCM encrypted cookies

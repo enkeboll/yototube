@@ -1,27 +1,15 @@
-import {reactRouter} from "@react-router/dev/vite"
+import path from "node:path"
+
+import {sveltekit} from "@sveltejs/kit/vite"
 import tailwindcss from "@tailwindcss/vite"
 import {defineConfig} from "vite"
-import devtoolsJson from "vite-plugin-devtools-json"
-import tsconfigPaths from "vite-tsconfig-paths"
 
 export default defineConfig({
-    plugins: [tailwindcss(), reactRouter(), tsconfigPaths(), devtoolsJson()],
+    plugins: [tailwindcss(), sveltekit()],
     resolve: {
-        dedupe: ["react", "react-dom"],
-    },
-    optimizeDeps: {
-        include: [
-            "react",
-            "react-dom",
-            "react-router",
-            "motion/react",
-            "lucide-react",
-            "radix-ui",
-            "clsx",
-            "tailwind-merge",
-            "class-variance-authority",
-            "sonner",
-        ],
+        alias: {
+            "~": path.resolve("./src"),
+        },
     },
     server: {
         port: 3000,
