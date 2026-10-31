@@ -1,10 +1,21 @@
 import {type Handle, redirect} from "@sveltejs/kit"
 
-import {getAppEnv} from "$lib/app-context"
+import {env as privateEnv} from "$env/dynamic/private"
+import {getAppEnv, getAuthSecret} from "$lib/app-context"
 import {status} from "$lib/auth.server"
 
 export const handle: Handle = async ({event, resolve}) => {
-    const env = getAppEnv()
+    const env = getAppEnv({
+        env: {
+            YOTO_AUTH_SECRET: privateEnv.YOTO_AUTH_SECRET || getAuthSecret(),
+            YOTO_CLIENT_ID:
+                privateEnv.YOTO_CLIENT_ID || process.env.YOTO_CLIENT_ID,
+            RESEND_API_KEY:
+                privateEnv.RESEND_API_KEY || process.env.RESEND_API_KEY,
+            PORT: privateEnv.PORT || process.env.PORT,
+            NODE_ENV: privateEnv.NODE_ENV || process.env.NODE_ENV,
+        },
+    })
     event.locals.env = env
 
     const authStatus = await status(event.request, env)

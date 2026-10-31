@@ -1,3 +1,11 @@
+import process from "node:process"
+
+try {
+    process.loadEnvFile?.()
+} catch {
+    // .env may not exist in environments where vars are passed directly
+}
+
 let ephemeralSecret: string | null = null
 
 export function getAuthSecret(env?: Partial<Env>): string {
