@@ -1,34 +1,29 @@
-import type {RequestHandler} from "@sveltejs/kit"
+import {redirect, type RequestHandler} from "@sveltejs/kit"
 
 import {getAppEnv} from "$lib/app-context"
 import {completePkceLogin} from "$lib/auth.server"
 
-export const GET: RequestHandler = async ({request, locals}) => {
+export const GET: RequestHandler = async ({request, locals, cookies}) => {
     const env = locals.env ?? getAppEnv()
     const result = await completePkceLogin(request, env)
 
     if (result.success) {
-        const response = new Response(null, {
-            status: 302,
-            headers: {
-                Location: "/cards",
-            },
+        const authCookieVal = result.setCookie
+            .split(";")[0]
+            .replace(/^yoto-auth=/, "")
+        cookies.set("yoto-auth", decodeURIComponent(authCookieVal), {
+            path: "/",
+            httpOnly: true,
+            sameSite: "lax",
+            maxAge: 60 * 60 * 24 * 30, // 30 days
+            secure: request.url.startsWith("https:"),
         })
-        response.headers.append("set-cookie", result.setCookie)
-        if (result.clearPkceCookie) {
-            response.headers.append("set-cookie", result.clearPkceCookie)
-        }
-        return response
+        cookies.delete("yoto-pkce", {path: "/"})
+        throw redirect(302, "/cards")
     }
 
-    const response = new Response(null, {
-        status: 302,
-        headers: {
-            Location: `/login?error=${encodeURIComponent(result.error)}`,
-        },
-    })
     if (result.clearPkceCookie) {
-        response.headers.append("set-cookie", result.clearPkceCookie)
+        cookies.delete("yoto-pkce", {path: "/"})
     }
-    return response
+    throw redirect(302, `/login?error=${encodeURIComponent(result.error)}`)
 }

@@ -31,12 +31,13 @@ export const actions: Actions = {
         if (intent === "oauth" || !intent) {
             const {authUrl, setCookie} = await initiatePkceLogin(request, env)
             // Parse yoto-pkce value from setCookie header string
-            const pkceVal = setCookie.split(";")[0].split("=")[1]
+            const pkceVal = setCookie.split(";")[0].replace(/^yoto-pkce=/, "")
             cookies.set("yoto-pkce", decodeURIComponent(pkceVal), {
                 path: "/",
                 httpOnly: true,
                 sameSite: "lax",
                 maxAge: 600,
+                secure: request.url.startsWith("https:"),
             })
             throw redirect(302, authUrl)
         }
@@ -85,12 +86,15 @@ export const actions: Actions = {
 
             if (result.success) {
                 // Parse auth token from setCookie header
-                const authVal = result.setCookie.split(";")[0].split("=")[1]
+                const authVal = result.setCookie
+                    .split(";")[0]
+                    .replace(/^yoto-auth=/, "")
                 cookies.set("yoto-auth", decodeURIComponent(authVal), {
                     path: "/",
                     httpOnly: true,
                     sameSite: "lax",
                     maxAge: 60 * 60 * 24 * 30,
+                    secure: request.url.startsWith("https:"),
                 })
                 throw redirect(302, "/cards")
             }

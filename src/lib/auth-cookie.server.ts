@@ -15,7 +15,12 @@ function parseCookieHeader(
     for (const pair of cookieHeader.split(";")) {
         const [k, ...v] = pair.trim().split("=")
         if (k) {
-            cookies[k] = decodeURIComponent(v.join("="))
+            const rawVal = v.join("=")
+            try {
+                cookies[k] = decodeURIComponent(rawVal)
+            } catch {
+                cookies[k] = rawVal
+            }
         }
     }
     return cookies

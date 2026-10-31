@@ -179,6 +179,21 @@ describe("auth-cookie", () => {
 
             expect(result).toEqual(largeTokens)
         })
+
+        it("should handle malformed non-UTF8 or unescaped % cookies gracefully without throwing", async () => {
+            const cookieString = await serializeAuthCookie(mockTokens, mockEnv)
+            const authPart = cookieString.split(";")[0]
+
+            const request = new Request("http://localhost/", {
+                headers: {
+                    Cookie: `_ga=GA1.2.12345; malformed=%E0%A4%A; ${authPart}; other=valid`,
+                },
+            })
+
+            const result = await getTokensFromCookie(request, mockEnv)
+
+            expect(result).toEqual(mockTokens)
+        })
     })
 
     describe("clearAuthCookie", () => {

@@ -19,7 +19,6 @@ export const handle: Handle = async ({event, resolve}) => {
     event.locals.env = env
 
     const authStatus = await status(event.request, env)
-    let setCookieHeader: string | undefined = undefined
 
     if (authStatus.valid) {
         event.locals.user = {
@@ -28,7 +27,16 @@ export const handle: Handle = async ({event, resolve}) => {
             expiresAt: authStatus.expiresAt,
         }
         if (authStatus.setCookie) {
-            setCookieHeader = authStatus.setCookie
+            const authCookieVal = authStatus.setCookie
+                .split(";")[0]
+                .replace(/^yoto-auth=/, "")
+            event.cookies.set("yoto-auth", decodeURIComponent(authCookieVal), {
+                path: "/",
+                httpOnly: true,
+                sameSite: "lax",
+                maxAge: 60 * 60 * 24 * 30, // 30 days
+                secure: event.request.url.startsWith("https:"),
+            })
         }
     }
 
@@ -39,11 +47,5 @@ export const handle: Handle = async ({event, resolve}) => {
         }
     }
 
-    const response = await resolve(event)
-
-    if (setCookieHeader) {
-        response.headers.append("set-cookie", setCookieHeader)
-    }
-
-    return response
+    return resolve(event)
 }
