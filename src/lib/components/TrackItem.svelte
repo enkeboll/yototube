@@ -4,12 +4,13 @@
         title: string
         duration?: number
         iconUrl?: string
+        error?: string
     }
 </script>
 
 <script lang="ts">
     import type {Snippet} from "svelte"
-    import {Copy, GripVertical, Trash2} from "@lucide/svelte"
+    import {AlertTriangle, Copy, GripVertical, Trash2} from "@lucide/svelte"
     import {
         AlertDialog,
         AlertDialogAction,
@@ -109,29 +110,58 @@
         </div>
     {/if}
 
-    <Dialog open={isIconDialogOpen} onOpenChange={onIconDialogChange}>
-        <DialogTrigger
-            class="shrink-0 p-2 rounded-md bg-zinc-900 hover:bg-zinc-700 transition-colors cursor-pointer"
-            aria-label="Change icon for {track.title}"
+    {#if track.error}
+        <div
+            class="shrink-0 w-12 h-12 rounded-md bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400"
+            title={track.error}
         >
-            {#if track.iconUrl}
-                <img
-                    src={track.iconUrl}
-                    alt=""
-                    class="w-8 h-8"
-                    style="image-rendering: pixelated;"
-                />
-            {:else}
-                <div class="w-8 h-8 bg-zinc-700 rounded"></div>
-            {/if}
-        </DialogTrigger>
-        <DialogContent class="sm:max-w-lg">
-            {@render iconPicker?.()}
-        </DialogContent>
-    </Dialog>
+            <AlertTriangle class="h-5 w-5" />
+        </div>
+    {:else}
+        <Dialog open={isIconDialogOpen} onOpenChange={onIconDialogChange}>
+            <DialogTrigger
+                class="shrink-0 p-2 rounded-md bg-zinc-900 hover:bg-zinc-700 transition-colors cursor-pointer"
+                aria-label="Change icon for {track.title}"
+            >
+                {#if track.iconUrl}
+                    <img
+                        src={track.iconUrl}
+                        alt=""
+                        class="w-8 h-8"
+                        style="image-rendering: pixelated;"
+                    />
+                {:else}
+                    <div class="w-8 h-8 bg-zinc-700 rounded"></div>
+                {/if}
+            </DialogTrigger>
+            <DialogContent class="sm:max-w-lg">
+                {@render iconPicker?.()}
+            </DialogContent>
+        </Dialog>
+    {/if}
 
     <div class="flex-1 min-w-0">
-        <p class="font-medium truncate">{track.title}</p>
+        <div class="flex flex-wrap items-center gap-2">
+            <p
+                class="font-medium truncate {track.error
+                    ? 'line-through text-muted-foreground'
+                    : ''}"
+            >
+                {track.title}
+            </p>
+            {#if track.error}
+                <span
+                    class="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 font-medium"
+                >
+                    Unavailable / Skipped
+                </span>
+            {/if}
+        </div>
+        {#if track.error}
+            <p class="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                {track.error}
+            </p>
+        {/if}
     </div>
 
     {#if track.duration}
@@ -141,16 +171,18 @@
     {/if}
 
     <div class="flex items-center gap-1">
-        <Button
-            variant="ghost"
-            size="sm"
-            class="text-muted-foreground hover:text-foreground"
-            disabled={isBusy || isReordering}
-            aria-label="Copy track: {track.title}"
-            onclick={onCopy}
-        >
-            <Copy class="h-4 w-4" />
-        </Button>
+        {#if !track.error}
+            <Button
+                variant="ghost"
+                size="sm"
+                class="text-muted-foreground hover:text-foreground"
+                disabled={isBusy || isReordering}
+                aria-label="Copy track: {track.title}"
+                onclick={onCopy}
+            >
+                <Copy class="h-4 w-4" />
+            </Button>
+        {/if}
 
         <AlertDialog>
             <AlertDialogTrigger

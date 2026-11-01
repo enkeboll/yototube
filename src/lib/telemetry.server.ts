@@ -121,7 +121,7 @@ type TrackOperationPayload = DurationPayload & {
 type TrackIconPayload = DurationPayload & {
     cardId: string
     trackKey: string
-    iconType: "yoto" | "community"
+    iconType: "yoto" | "community" | "yotoeverything"
 }
 
 type TrackReorderPayload = DurationPayload & {

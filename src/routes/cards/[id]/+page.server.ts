@@ -1,15 +1,25 @@
 import {type Actions, fail, redirect} from "@sveltejs/kit"
+import {and, eq, inArray} from "drizzle-orm"
 
 import {getAppEnv} from "$lib/app-context"
 import {getAuthenticatedSdk, getToken} from "$lib/auth.server"
+import {
+    buildCardBlockViews,
+    deletePlaylistBlock,
+    reorderCardBlocks,
+    togglePlaylistTrackSkip,
+} from "$lib/card-blocks.server"
 import {getCardCoverUrl} from "$lib/card-utils"
+import {getDb, schema} from "$lib/db/index.server"
 import {getNextChapterKey, stripNullValues} from "$lib/import-utils"
 import {logger} from "$lib/logger.server"
 import {trackKeysSchema, updateTitleSchema} from "$lib/schemas/card"
+import {syncPlaylistBlock} from "$lib/sync.server"
 import {EVENT, telemetry} from "$lib/telemetry.server"
 import type {CardData, TransferCard} from "$lib/types"
 import {parseFormData} from "$lib/validation.server"
 import {getNumberIcons, getYotoIconUrlMap} from "$lib/yoto-icons.server"
+import {fetchYotoEverythingIconImage} from "$lib/yotoeverything-icons.server"
 import {fetchCommunityIconImage} from "$lib/yotoicons-community.server"
 
 import type {PageServerLoad} from "./$types"
@@ -153,12 +163,20 @@ export const load: PageServerLoad = async ({params, request, locals}) => {
             }
         })
 
+        const blocks = buildCardBlockViews(
+            cardData.cardId ?? cardId,
+            cardData,
+            yotoIconUrls,
+            env,
+        )
+
         return {
             card: {
                 id: cardData.cardId ?? cardId,
                 title: cardData.title ?? "Untitled Card",
                 coverUrl,
                 tracks,
+                blocks,
             },
             otherCards,
         }
@@ -207,6 +225,29 @@ export const actions: Actions = {
                 )
 
                 if (updatedChapters.length === card.content.chapters.length) {
+                    // Check if trackKey is an errored placeholder block ID in SQLite
+                    try {
+                        const db = getDb(env)
+                        const placeholder = db
+                            .select()
+                            .from(schema.cardBlocks)
+                            .where(
+                                and(
+                                    eq(schema.cardBlocks.cardId, cardId),
+                                    eq(schema.cardBlocks.id, trackKey),
+                                ),
+                            )
+                            .get()
+                        if (placeholder) {
+                            db.delete(schema.cardBlocks)
+                                .where(eq(schema.cardBlocks.id, trackKey))
+                                .run()
+                            trackTelemetry?.completed()
+                            return {success: true, deleted: trackKey}
+                        }
+                    } catch {
+                        // fall through
+                    }
                     trackTelemetry?.failed("track_not_found")
                     return fail(404, {error: "Track not found"})
                 }
@@ -226,6 +267,21 @@ export const actions: Actions = {
                         typeof sdk.content.updateCard
                     >[0],
                 )
+
+                try {
+                    const db = getDb(env)
+                    db.delete(schema.cardBlocks)
+                        .where(
+                            and(
+                                eq(schema.cardBlocks.cardId, cardId),
+                                eq(schema.cardBlocks.type, "track"),
+                                eq(schema.cardBlocks.yotoChapterKey, trackKey),
+                            ),
+                        )
+                        .run()
+                } catch {
+                    // non-fatal
+                }
 
                 trackTelemetry?.completed()
                 return {success: true, deleted: trackKey}
@@ -287,6 +343,24 @@ export const actions: Actions = {
                         typeof sdk.content.updateCard
                     >[0],
                 )
+
+                try {
+                    const db = getDb(env)
+                    db.delete(schema.cardBlocks)
+                        .where(
+                            and(
+                                eq(schema.cardBlocks.cardId, cardId),
+                                eq(schema.cardBlocks.type, "track"),
+                                inArray(
+                                    schema.cardBlocks.yotoChapterKey,
+                                    result.data,
+                                ),
+                            ),
+                        )
+                        .run()
+                } catch {
+                    // non-fatal
+                }
 
                 trackTelemetry?.completed(deletedCount)
                 return {success: true, deletedCount}
@@ -624,8 +698,12 @@ export const actions: Actions = {
                 const trackKey = formData.get("trackKey") as string
                 const iconId = formData.get("iconId") as string
                 const requestedIconType = formData.get("iconType")
-                const iconType: "yoto" | "community" =
-                    requestedIconType === "community" ? "community" : "yoto"
+                const iconType: "yoto" | "community" | "yotoeverything" =
+                    requestedIconType === "community"
+                        ? "community"
+                        : requestedIconType === "yotoeverything"
+                          ? "yotoeverything"
+                          : "yoto"
 
                 if (!trackKey || !iconId) {
                     return fail(400, {
@@ -637,7 +715,10 @@ export const actions: Actions = {
                 if (iconType === "yoto") {
                     mediaId = iconId
                 } else {
-                    const imageBuffer = await fetchCommunityIconImage(iconId)
+                    const imageBuffer =
+                        iconType === "yotoeverything"
+                            ? await fetchYotoEverythingIconImage(iconId)
+                            : await fetchCommunityIconImage(iconId)
                     const iconTokenResult = await getToken(request, env)
                     if (!iconTokenResult) {
                         return fail(401, {
@@ -820,6 +901,84 @@ export const actions: Actions = {
                     durationMs: Date.now() - startedAt,
                 })
                 return {success: true, titleUpdated: true}
+            }
+
+            if (intent === "togglePlaylistTrackSkip") {
+                const playlistTrackId = formData.get(
+                    "playlistTrackId",
+                ) as string
+                const skipped = formData.get("skipped") === "true"
+
+                if (!playlistTrackId) {
+                    return fail(400, {error: "Playlist track ID is required"})
+                }
+
+                await togglePlaylistTrackSkip(
+                    sdk,
+                    cardId,
+                    playlistTrackId,
+                    skipped,
+                    env,
+                )
+                return {
+                    success: true,
+                    trackSkipUpdated: true,
+                    skipped,
+                }
+            }
+
+            if (intent === "syncPlaylistBlock") {
+                const blockId = formData.get("blockId") as string
+                if (!blockId) {
+                    return fail(400, {error: "Playlist block ID is required"})
+                }
+
+                const syncResult = await syncPlaylistBlock({
+                    sdk,
+                    env,
+                    cardId,
+                    blockId,
+                })
+
+                return {
+                    success: true,
+                    playlistSynced: true,
+                    message: syncResult.message,
+                }
+            }
+
+            if (intent === "deletePlaylistBlock") {
+                const blockId = formData.get("blockId") as string
+                if (!blockId) {
+                    return fail(400, {error: "Playlist block ID is required"})
+                }
+
+                await deletePlaylistBlock(sdk, cardId, blockId, env)
+                return {success: true, playlistDeleted: true}
+            }
+
+            if (intent === "reorderBlocks") {
+                const blockIdsJson = formData.get("blockIds")
+                if (typeof blockIdsJson !== "string") {
+                    return fail(400, {error: "Block IDs are required"})
+                }
+
+                let blockIds: unknown
+                try {
+                    blockIds = JSON.parse(blockIdsJson)
+                } catch {
+                    return fail(400, {error: "Invalid block IDs"})
+                }
+
+                if (
+                    !Array.isArray(blockIds) ||
+                    blockIds.some(id => typeof id !== "string")
+                ) {
+                    return fail(400, {error: "Invalid block IDs"})
+                }
+
+                await reorderCardBlocks(sdk, cardId, blockIds as string[], env)
+                return {success: true, reordered: true}
             }
 
             return fail(400, {error: "Unknown action"})

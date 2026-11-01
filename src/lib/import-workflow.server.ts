@@ -7,14 +7,18 @@ import {
 import {
     CardCapacityError,
     checkCardCapacity,
+    type FailedAudioTrack,
     inspectVideo,
     processAudio,
+    processAudioResilient,
+    type TranscodedTrack,
     updateCard,
 } from "~/lib/import.server"
 import {readImportCredential} from "~/lib/import-credential.server"
 import {getImportProgress} from "~/lib/import-progress.server"
 import {logger} from "~/lib/logger.server"
 import {destroySandbox} from "~/lib/sandbox.server"
+import {importSyncedPlaylist} from "~/lib/sync.server"
 import {EVENT, telemetry} from "~/lib/telemetry.server"
 import {getCanonicalYouTubeUrl, getYouTubeUrlType} from "~/lib/youtube"
 
@@ -95,6 +99,43 @@ class ImportWorkflowRunner {
         }
 
         try {
+            if (cardImport.importMode === "synced") {
+                const sdk = await getSdk()
+                const syncResult = await importSyncedPlaylist({
+                    sdk,
+                    env,
+                    importId: cardImport.id,
+                    cardId: cardImport.cardId,
+                    sourceUrl: cardImport.youtubeUrl,
+                    insertPosition: cardImport.insertPosition ?? "end",
+                    onProgress: reportProgress,
+                })
+
+                await progress.reportComplete(syncResult)
+                telemetry.info(EVENT.IMPORT.COMPLETED, {
+                    ...telemetryContext,
+                    durationMs: Date.now() - startedAt,
+                    sourceTrackCount: syncResult.added + syncResult.skipped,
+                    sourceDurationSeconds: 0,
+                    added: syncResult.added,
+                    skipped: syncResult.skipped,
+                    chapterSplitUnavailable: false,
+                })
+
+                const workflowResult: ImportWorkflowResult = {
+                    importId: cardImport.id,
+                    ...syncResult,
+                }
+
+                this.instances.set(cardImport.id, {
+                    status: "complete",
+                    error: null,
+                    output: workflowResult,
+                })
+
+                return workflowResult
+            }
+
             stage = "inspect_video"
             const tracks = await inspectVideo(env, cardImport, reportProgress)
             const chapterSplitUnavailable =
@@ -111,22 +152,49 @@ class ImportWorkflowRunner {
 
             stage = "process_audio"
             const sdkForAudio = await getSdk()
-            const transcodedTracks = await processAudio(
-                sdkForAudio,
-                env,
-                cardImport,
-                tracks,
-                reportProgress,
-            )
+            let transcodedTracks: TranscodedTrack[]
+            let failedTracks: FailedAudioTrack[] = []
+
+            if (
+                tracks.length > 1 &&
+                typeof processAudioResilient === "function"
+            ) {
+                const resilientResult = await processAudioResilient(
+                    sdkForAudio,
+                    env,
+                    cardImport,
+                    tracks,
+                    reportProgress,
+                )
+                transcodedTracks = resilientResult.succeeded
+                failedTracks = resilientResult.failed
+            } else {
+                transcodedTracks = await processAudio(
+                    sdkForAudio,
+                    env,
+                    cardImport,
+                    tracks,
+                    reportProgress,
+                )
+            }
 
             stage = "update_card"
             const sdkForUpdate = await getSdk()
-            const result = await updateCard(
-                sdkForUpdate,
-                cardImport,
-                transcodedTracks,
-                reportProgress,
-            )
+            const result =
+                failedTracks.length > 0
+                    ? await updateCard(
+                          sdkForUpdate,
+                          cardImport,
+                          transcodedTracks,
+                          reportProgress,
+                          failedTracks,
+                      )
+                    : await updateCard(
+                          sdkForUpdate,
+                          cardImport,
+                          transcodedTracks,
+                          reportProgress,
+                      )
 
             const completedResult = chapterSplitUnavailable
                 ? {

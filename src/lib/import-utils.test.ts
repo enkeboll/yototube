@@ -2,6 +2,7 @@ import {describe, expect, it} from "vitest"
 
 import {
     createChapter,
+    formatTitleWithArtist,
     getImportProgressSummary,
     getNextChapterKey,
     getProgressPercent,
@@ -365,6 +366,21 @@ describe("createChapter", () => {
         expect(chapter.tracks[0].type).toBe("audio")
         expect(chapter.tracks[0].channels).toBe("stereo")
     })
+
+    it("should include display.icon16x16 when iconMediaId is provided", () => {
+        const chapter = createChapter(
+            "Baby Beluga - Raffi",
+            "hash",
+            1,
+            120,
+            50000,
+            "media-icon-123",
+        )
+        expect(chapter.display).toEqual({icon16x16: "yoto:#media-icon-123"})
+        expect(chapter.tracks[0].display).toEqual({
+            icon16x16: "yoto:#media-icon-123",
+        })
+    })
 })
 
 describe("getNextChapterKey", () => {
@@ -399,5 +415,26 @@ describe("getNextChapterKey", () => {
     it("should handle double-digit keys", () => {
         const chapters = [{key: "10"}, {key: "11"}]
         expect(getNextChapterKey(chapters)).toBe("12")
+    })
+})
+
+describe("formatTitleWithArtist", () => {
+    it("appends the artist after the song title and strips '- Topic'", () => {
+        expect(formatTitleWithArtist("Baby Beluga", "Raffi - Topic")).toBe(
+            "Baby Beluga - Raffi",
+        )
+    })
+
+    it("does not duplicate artist if already present in the title", () => {
+        expect(formatTitleWithArtist("Raffi - Baby Beluga", "Raffi")).toBe(
+            "Raffi - Baby Beluga",
+        )
+    })
+
+    it("returns title unchanged when artist is missing or NA", () => {
+        expect(formatTitleWithArtist("Baby Beluga", undefined)).toBe(
+            "Baby Beluga",
+        )
+        expect(formatTitleWithArtist("Baby Beluga", "NA")).toBe("Baby Beluga")
     })
 })

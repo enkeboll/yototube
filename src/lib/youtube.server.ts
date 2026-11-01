@@ -14,6 +14,10 @@ type YouTubeVideo = {
     url: string
     duration?: number
     chapters?: YouTubeChapter[]
+    artist?: string
+    album?: string
+    tags?: string[]
+    categories?: string[]
 }
 
 type YouTubePlaylist = {

@@ -39,7 +39,12 @@ export const GET: RequestHandler = async ({params, request, locals}) => {
         )
     }
 
-    const {url: youtubeUrl, splitByChapters} = searchParams.data
+    const {
+        url: youtubeUrl,
+        splitByChapters,
+        importMode = "one_time",
+        insertPosition = "end",
+    } = searchParams.data
 
     if (isYouTubeMix(youtubeUrl)) {
         return Response.json(
@@ -63,6 +68,8 @@ export const GET: RequestHandler = async ({params, request, locals}) => {
         cardId,
         youtubeUrl,
         splitByChapters,
+        importMode,
+        insertPosition,
     }
     const importLogContext = {
         importId: cardImport.id,

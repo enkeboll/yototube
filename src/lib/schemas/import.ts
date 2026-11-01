@@ -12,6 +12,14 @@ const importSearchParamsSchema = z.object({
         })
         .default("false")
         .transform(value => value === "true"),
+    importMode: z
+        .enum(["one_time", "synced"])
+        .default("one_time")
+        .optional(),
+    insertPosition: z
+        .enum(["start", "end"])
+        .default("end")
+        .optional(),
 })
 
 type ImportSearchParams = z.infer<typeof importSearchParamsSchema>

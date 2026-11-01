@@ -109,6 +109,7 @@ export type YotoTrack = {
     duration?: number
     fileSize?: number
     channels?: string
+    display?: {icon16x16: string}
 }
 
 export type YotoChapter = {
@@ -117,6 +118,26 @@ export type YotoChapter = {
     tracks: YotoTrack[]
     duration?: number
     fileSize?: number
+    display?: {icon16x16: string}
+}
+
+/**
+ * Format a track title so it includes the artist name after the song title
+ * (e.g. "Baby Beluga - Raffi"), while avoiding duplicate artist names if
+ * the title already contains the artist.
+ */
+export function formatTitleWithArtist(
+    title: string,
+    artist?: string | null,
+): string {
+    const cleanTitle = title.trim()
+    if (!artist) return cleanTitle
+    const cleanArtist = artist.replace(/\s*-\s*Topic$/i, "").trim()
+    if (!cleanArtist || cleanArtist === "NA") return cleanTitle
+    if (cleanTitle.toLowerCase().includes(cleanArtist.toLowerCase())) {
+        return cleanTitle
+    }
+    return `${cleanTitle} - ${cleanArtist}`
 }
 
 /**
@@ -170,12 +191,17 @@ export const createChapter = (
     position: number,
     duration?: number,
     fileSize?: number,
+    iconMediaId?: string,
 ): YotoChapter => {
     const chapterKey = String(position - 1).padStart(2, "0")
+    const display = iconMediaId
+        ? {icon16x16: `yoto:#${iconMediaId}`}
+        : undefined
 
     return {
         key: chapterKey,
         title,
+        ...(display && {display}),
         tracks: [
             {
                 key: "01",
@@ -186,6 +212,7 @@ export const createChapter = (
                 duration,
                 fileSize,
                 channels: "stereo",
+                ...(display && {display}),
             },
         ],
         duration,

@@ -1,4 +1,4 @@
-import type {DisplayIcon} from "@yotoplay/yoto-sdk"
+import type {DisplayIcon, YotoSdk} from "@yotoplay/yoto-sdk"
 
 import {getAuthenticatedSdk, getToken} from "./auth.server"
 
@@ -44,6 +44,28 @@ const fetchYotoIcons = async (
     cacheTimestamp = now
 
     return yotoIcons
+}
+
+// Fetch native Yoto icons using an already-instantiated YotoSdk (used during background imports/syncs)
+const fetchYotoIconsWithSdk = async (sdk: YotoSdk): Promise<YotoIcon[]> => {
+    const now = Date.now()
+    if (iconCache && now - cacheTimestamp < CACHE_TTL_MS) {
+        return iconCache
+    }
+
+    if (!sdk.icons?.getDisplayIcons) {
+        return []
+    }
+
+    try {
+        const icons: DisplayIcon[] = await sdk.icons.getDisplayIcons()
+        const yotoIcons = icons.map(toYotoIcon)
+        iconCache = yotoIcons
+        cacheTimestamp = now
+        return yotoIcons
+    } catch {
+        return iconCache ?? []
+    }
 }
 
 // Fetch icons uploaded to the current user's Yoto account.
@@ -155,6 +177,7 @@ export {
     clearIconCache,
     fetchUserYotoIcons,
     fetchYotoIcons,
+    fetchYotoIconsWithSdk,
     getNumberIcons,
     getYotoIconUrlMap,
     searchYotoIcons,

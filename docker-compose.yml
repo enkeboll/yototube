@@ -6,11 +6,17 @@ services:
         restart: unless-stopped
         ports:
             - "3000:3000"
+        volumes:
+            - ./data:/app/data
         environment:
             - PORT=3000
             - NODE_ENV=production
+            - DATABASE_URL=/app/data/yototube.db
             - YOTO_AUTH_SECRET=${YOTO_AUTH_SECRET}
             - YOTO_CLIENT_ID=${YOTO_CLIENT_ID:-}
+            - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+            - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+            - SYNC_INTERVAL_MINUTES=${SYNC_INTERVAL_MINUTES:-360}
             - RESEND_API_KEY=${RESEND_API_KEY:-}
         env_file:
             - path: .env

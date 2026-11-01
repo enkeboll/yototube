@@ -8,19 +8,18 @@
         Square,
         Trash2,
         Upload,
-        X,
     } from "@lucide/svelte"
     import {invalidateAll} from "$app/navigation"
     import {toast} from "svelte-sonner"
+    import type {CardBlockView} from "$lib/card-blocks.server"
     import AddTracksDialog from "$lib/components/AddTracksDialog.svelte"
-    import CardCover, {
-        CARD_ASPECT_RATIO,
-    } from "$lib/components/CardCover.svelte"
+    import CardCover from "$lib/components/CardCover.svelte"
     import CopyTrackDialog from "$lib/components/CopyTrackDialog.svelte"
     import EditableTitle from "$lib/components/EditableTitle.svelte"
     import IconPicker, {
         type IconSelection,
     } from "$lib/components/IconPicker.svelte"
+    import SyncedPlaylistBlock from "$lib/components/SyncedPlaylistBlock.svelte"
     import TrackItem, {type Track} from "$lib/components/TrackItem.svelte"
     import {
         AlertDialog,
@@ -40,6 +39,7 @@
     let {data, form}: {data: PageData; form: ActionData} = $props()
 
     let tracks = $state<Track[]>([])
+    let blocks = $state<CardBlockView[]>([])
     let selectedKeys = $state<Set<string>>(new Set())
     let isSelecting = $state(false)
     let isReordering = $state(false)
@@ -52,9 +52,12 @@
     let fileInputEl = $state<HTMLInputElement | null>(null)
     let draggedIndex = $state<number | null>(null)
 
-    // Sync tracks from server data
+    const hasPlaylists = $derived(blocks.some(b => b.type === "playlist"))
+
+    // Sync tracks and blocks from server data
     $effect(() => {
         tracks = [...data.card.tracks]
+        blocks = [...(data.card.blocks ?? [])]
     })
 
     // Handle form feedback
@@ -85,7 +88,7 @@
     async function submitIntent(
         intent: string,
         params: Record<string, string> = {},
-    ) {
+    ): Promise<boolean> {
         isBusy = true
         try {
             const formData = new FormData()
@@ -101,17 +104,20 @@
 
             if (response.redirected) {
                 window.location.href = response.url
-                return
+                return true
             }
 
             const result = await response.json()
             if (result.type === "failure" && result.data?.error) {
                 toast.error(result.data.error)
+                return false
             } else {
                 await invalidateAll()
+                return true
             }
         } catch {
             toast.error("An error occurred")
+            return false
         } finally {
             isBusy = false
         }
@@ -124,62 +130,114 @@
 
     // Number tracks
     async function handleNumberTracks() {
-        await submitIntent("numberTracks")
-        toast.success("Tracks numbered")
+        if (await submitIntent("numberTracks")) {
+            toast.success("Tracks numbered")
+        }
     }
 
     // Delete single track
     async function handleDeleteTrack(trackKey: string) {
-        await submitIntent("deleteTrack", {trackKey})
-        toast.success("Track deleted")
+        if (await submitIntent("deleteTrack", {trackKey})) {
+            toast.success("Track deleted")
+        }
     }
 
     // Delete selected tracks
     async function handleDeleteSelectedTracks() {
         const keys = Array.from(selectedKeys)
-        await submitIntent("deleteTracks", {trackKeys: JSON.stringify(keys)})
-        selectedKeys = new Set()
-        isSelecting = false
-        toast.success(`Deleted ${keys.length} tracks`)
+        if (
+            await submitIntent("deleteTracks", {
+                trackKeys: JSON.stringify(keys),
+            })
+        ) {
+            selectedKeys = new Set()
+            isSelecting = false
+            toast.success(`Deleted ${keys.length} tracks`)
+        }
     }
 
     // Copy single track
     async function handleCopyTrack(destinationCardId: string) {
         if (!copyingTrackKey) return
-        await submitIntent("copyTrack", {
-            trackKey: copyingTrackKey,
-            destinationCardId,
-        })
-        isCopyDialogOpen = false
-        copyingTrackKey = null
-        toast.success("Track copied")
+        if (
+            await submitIntent("copyTrack", {
+                trackKey: copyingTrackKey,
+                destinationCardId,
+            })
+        ) {
+            isCopyDialogOpen = false
+            copyingTrackKey = null
+            toast.success("Track copied")
+        }
     }
 
     // Copy selected tracks
     async function handleCopySelectedTracks(destinationCardId: string) {
         const keys = Array.from(selectedKeys)
-        await submitIntent("copyTracks", {
-            trackKeys: JSON.stringify(keys),
-            destinationCardId,
-        })
-        isBulkCopyDialogOpen = false
-        selectedKeys = new Set()
-        isSelecting = false
-        toast.success(`Copied ${keys.length} tracks`)
+        if (
+            await submitIntent("copyTracks", {
+                trackKeys: JSON.stringify(keys),
+                destinationCardId,
+            })
+        ) {
+            isBulkCopyDialogOpen = false
+            selectedKeys = new Set()
+            isSelecting = false
+            toast.success(`Copied ${keys.length} tracks`)
+        }
     }
 
-    // Icon select
+    // Icon select (for standalone tracks or synced playlist tracks)
+    async function handleSelectIconForTrackKey(
+        trackKey: string,
+        icon: IconSelection,
+    ) {
+        activeIconTrackKey = null
+        if (
+            await submitIntent("updateTrackIcon", {
+                trackKey,
+                iconId: icon.id,
+                iconType: icon.type,
+            })
+        ) {
+            toast.success("Icon updated")
+        }
+    }
+
     async function handleSelectIcon(icon: IconSelection) {
         if (!activeIconTrackKey) return
-        const trackKey = activeIconTrackKey
-        activeIconTrackKey = null
+        await handleSelectIconForTrackKey(activeIconTrackKey, icon)
+    }
 
-        await submitIntent("updateTrackIcon", {
-            trackKey,
-            iconId: icon.id,
-            iconType: icon.type,
-        })
-        toast.success("Icon updated")
+    // Synced playlist operations
+    async function handleTogglePlaylistTrackSkip(
+        playlistTrackId: string,
+        skipped: boolean,
+    ) {
+        if (
+            await submitIntent("togglePlaylistTrackSkip", {
+                playlistTrackId,
+                skipped: String(skipped),
+            })
+        ) {
+            toast.success(
+                skipped
+                    ? "Track skipped on Yoto card"
+                    : "Track included on Yoto card",
+            )
+        }
+    }
+
+    async function handleSyncPlaylistBlock(blockId: string) {
+        if (await submitIntent("syncPlaylistBlock", {blockId})) {
+            toast.success("Playlist synced with upstream")
+        }
+    }
+
+    async function handleDeletePlaylistBlock(blockId: string) {
+        if (await submitIntent("deletePlaylistBlock", {blockId})) {
+            toast.success("Synced playlist removed from card")
+        }
     }
 
     // Upload cover
@@ -214,7 +272,7 @@
         }
     }
 
-    // Drag and drop reordering
+    // Drag and drop reordering (supports top-level blocks or standalone tracks)
     function handleDragStart(e: DragEvent, index: number) {
         draggedIndex = index
         if (e.dataTransfer) {
@@ -222,12 +280,12 @@
         }
     }
 
-    function handleDragOver(e: DragEvent, index: number) {
+    function handleDragOver(_e: DragEvent, index: number) {
         if (draggedIndex === null || draggedIndex === index) return
-        const reordered = [...tracks]
+        const reordered = [...blocks]
         const [moved] = reordered.splice(draggedIndex, 1)
         reordered.splice(index, 0, moved)
-        tracks = reordered
+        blocks = reordered
         draggedIndex = index
     }
 
@@ -236,11 +294,23 @@
         draggedIndex = null
         isReordering = true
 
-        const trackKeys = tracks.map(t => t.key)
         try {
-            await submitIntent("reorderTracks", {
-                trackKeys: JSON.stringify(trackKeys),
-            })
+            if (hasPlaylists) {
+                const blockIds = blocks.map(b => b.id)
+                await submitIntent("reorderBlocks", {
+                    blockIds: JSON.stringify(blockIds),
+                })
+            } else {
+                const trackKeys = blocks
+                    .filter(
+                        (b): b is Extract<CardBlockView, {type: "track"}> =>
+                            b.type === "track",
+                    )
+                    .map(t => t.key)
+                await submitIntent("reorderTracks", {
+                    trackKeys: JSON.stringify(trackKeys),
+                })
+            }
         } finally {
             isReordering = false
         }
@@ -311,7 +381,7 @@
                         {data.card.tracks.length} track{data.card.tracks
                             .length !== 1
                             ? "s"
-                            : ""}
+                            : ""} on card
                     </p>
                 </div>
 
@@ -455,8 +525,8 @@
             </div>
         {/if}
 
-        <!-- Track List -->
-        {#if tracks.length === 0}
+        <!-- Track & Playlist Block List -->
+        {#if blocks.length === 0}
             <Card>
                 <CardContent class="py-12 text-center">
                     <p class="text-muted-foreground mb-4">
@@ -470,35 +540,61 @@
             </Card>
         {:else}
             <ul
-                class="divide-y divide-border/30 rounded-xl border bg-card/50 overflow-hidden shadow-xs"
+                class="space-y-2 rounded-xl border bg-card/50 p-2 overflow-hidden shadow-xs"
             >
-                {#each tracks as track, index (track.key)}
-                    <TrackItem
-                        {track}
-                        {index}
-                        {isBusy}
-                        {isReordering}
-                        {isSelecting}
-                        isSelected={selectedKeys.has(track.key)}
-                        isIconDialogOpen={activeIconTrackKey === track.key}
-                        onIconDialogChange={open => {
-                            activeIconTrackKey = open ? track.key : null
-                        }}
-                        onCopy={() => {
-                            copyingTrackKey = track.key
-                            isCopyDialogOpen = true
-                        }}
-                        onDelete={handleDeleteTrack}
-                        onSelectedChange={selected =>
-                            toggleSelectTrack(track.key, selected)}
-                        ondragstart={handleDragStart}
-                        ondragover={handleDragOver}
-                        ondragend={handleDragEnd}
-                    >
-                        {#snippet iconPicker()}
-                            <IconPicker onSelect={handleSelectIcon} />
-                        {/snippet}
-                    </TrackItem>
+                {#each blocks as block, index (block.id)}
+                    {#if block.type === "playlist"}
+                        <SyncedPlaylistBlock
+                            {block}
+                            {index}
+                            {isBusy}
+                            {isSelecting}
+                            {activeIconTrackKey}
+                            onIconDialogChange={key => {
+                                activeIconTrackKey = key
+                            }}
+                            onSelectIcon={handleSelectIconForTrackKey}
+                            onToggleSkip={handleTogglePlaylistTrackSkip}
+                            onSyncNow={handleSyncPlaylistBlock}
+                            onDeletePlaylist={handleDeletePlaylistBlock}
+                            ondragstart={handleDragStart}
+                            ondragover={handleDragOver}
+                            ondragend={handleDragEnd}
+                        />
+                    {:else}
+                        <TrackItem
+                            track={block}
+                            {index}
+                            {isBusy}
+                            {isReordering}
+                            {isSelecting}
+                            isSelected={selectedKeys.has(block.key)}
+                            isIconDialogOpen={activeIconTrackKey === block.key}
+                            onIconDialogChange={open => {
+                                activeIconTrackKey = open ? block.key : null
+                            }}
+                            onCopy={() => {
+                                copyingTrackKey = block.key
+                                isCopyDialogOpen = true
+                            }}
+                            onDelete={handleDeleteTrack}
+                            onSelectedChange={selected =>
+                                toggleSelectTrack(block.key, selected)}
+                            ondragstart={handleDragStart}
+                            ondragover={handleDragOver}
+                            ondragend={handleDragEnd}
+                        >
+                            {#snippet iconPicker()}
+                                <IconPicker
+                                    trackTitle={block.title}
+                                    trackArtist={block.artist}
+                                    trackAlbum={block.album}
+                                    trackTags={block.tags}
+                                    onSelect={handleSelectIcon}
+                                />
+                            {/snippet}
+                        </TrackItem>
+                    {/if}
                 {/each}
             </ul>
         {/if}

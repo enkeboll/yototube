@@ -35,8 +35,8 @@ const SPLIT_ERROR_MARKER = "__YOTO_SPLIT_ERROR__"
 // Validate that a URL is a legitimate YouTube URL
 function isYoutubeUrl(url: string): boolean {
     const youtubePatterns = [
-        /^https?:\/\/(www\.)?youtube\.com\/watch\?v=[\w-]+/,
-        /^https?:\/\/(www\.)?youtube\.com\/playlist\?list=[\w-]+/,
+        /^https?:\/\/(www\.|music\.)?youtube\.com\/watch\?v=[\w-]+/,
+        /^https?:\/\/(www\.|music\.)?youtube\.com\/playlist\?list=[\w-]+/,
         /^https?:\/\/youtu\.be\/[\w-]+/,
     ]
     return youtubePatterns.some(pattern => pattern.test(url))
@@ -109,12 +109,34 @@ function parseVideoInfo(value: string): YouTubeVideo {
           })
         : undefined
 
+    const artist =
+        typeof video.artist === "string" && video.artist
+            ? video.artist
+            : typeof video.uploader === "string" && video.uploader
+              ? video.uploader.replace(/\s*-\s*Topic$/i, "")
+              : undefined
+
+    const album =
+        typeof video.album === "string" && video.album ? video.album : undefined
+
+    const tags = Array.isArray(video.tags)
+        ? video.tags.filter((t): t is string => typeof t === "string")
+        : undefined
+
+    const categories = Array.isArray(video.categories)
+        ? video.categories.filter((c): c is string => typeof c === "string")
+        : undefined
+
     return {
         id: video.id,
         title: video.title,
         url: `https://www.youtube.com/watch?v=${video.id}`,
         duration,
         chapters,
+        ...(artist && {artist}),
+        ...(album && {album}),
+        ...(tags?.length && {tags}),
+        ...(categories?.length && {categories}),
     }
 }
 
@@ -139,7 +161,7 @@ async function getPlaylistInfo(
 
     if (isPlaylist) {
         const result = await sandbox.exec(
-            `yt-dlp --no-check-certificates --flat-playlist --print "%(playlist_id)s\t%(playlist_title)s\t%(id)s\t%(title)s\t%(duration)s" ${escapedUrl}`,
+            `yt-dlp --no-check-certificates --js-runtimes node --flat-playlist --print "%(playlist_id)s\t%(playlist_title)s\t%(id)s\t%(title)s\t%(duration)s\t%(channel,uploader,artist)s" ${escapedUrl}`,
         )
 
         if (!result.success) {
@@ -155,12 +177,17 @@ async function getPlaylistInfo(
         const [playlistId, playlistTitle] = lines[0].split("\t")
 
         const videos: YouTubeVideo[] = lines.map(line => {
-            const [, , videoId, title, duration] = line.split("\t")
+            const [, , videoId, title, duration, rawArtist] = line.split("\t")
+            const cleanArtist =
+                rawArtist && rawArtist !== "NA"
+                    ? rawArtist.replace(/\s*-\s*Topic$/i, "").trim()
+                    : undefined
             return {
                 id: videoId,
                 title,
                 url: `https://www.youtube.com/watch?v=${videoId}`,
                 duration: parseDuration(duration),
+                ...(cleanArtist && {artist: cleanArtist}),
             }
         })
 
@@ -175,7 +202,7 @@ async function getPlaylistInfo(
         return {id: playlistId, title: playlistTitle, videos}
     } else {
         const result = await sandbox.exec(
-            `yt-dlp --no-check-certificates --dump-single-json ` +
+            `yt-dlp --no-check-certificates --js-runtimes node --dump-single-json ` +
                 `--skip-download --no-playlist ${escapedUrl}`,
         )
 
@@ -230,6 +257,7 @@ async function downloadVideo(
         const downloadResult = await sandbox.exec(
             `yt-dlp --no-check-certificates ` +
                 `--format 'bestaudio[ext=m4a]' ` +
+                `--js-runtimes node ` +
                 `-o ${escapedPath} ${input}`,
         )
 
@@ -395,7 +423,7 @@ function getPrepareCommand(audio: DownloadedAudio, index: number): string {
     const escapedPath = escapeShellArg(audio.path)
 
     return (
-        `size_${index}=$(stat -c %s ${escapedPath}) || ` +
+        `size_${index}=$(stat -c %s ${escapedPath} 2>/dev/null || stat -f %z ${escapedPath}) || ` +
         `{ printf '${PREPARE_ERROR_MARKER}\\t${index}\\tmeasure\\n' >&2; exit 1; }\n` +
         `duration_${index}=$(ffprobe -v error ` +
         `-show_entries format=duration ` +

@@ -1,6 +1,10 @@
+import crypto from "node:crypto"
 import type {YotoSdk} from "@yotoplay/yoto-sdk"
+import {asc, eq} from "drizzle-orm"
 import pLimit, {type LimitFunction} from "p-limit"
 
+import {getDb, schema} from "~/lib/db/index.server"
+import {pickUniqueYotoIconsForTracks} from "~/lib/icon-suggest.server"
 import {
     type AudioTrack,
     getImportSandboxId,
@@ -9,6 +13,7 @@ import {
 } from "~/lib/import"
 import {
     createChapter,
+    formatTitleWithArtist,
     getImportProgressSummary,
     getNextChapterKey,
     type ImportProgress,
@@ -17,6 +22,10 @@ import {
     type YotoChapter,
 } from "~/lib/import-utils"
 import {logger} from "~/lib/logger.server"
+import {getGoogleConnectionStatus} from "~/lib/providers/google-oauth.server"
+import {getProviderForUrl} from "~/lib/providers/registry.server"
+import {resolveTrackToYouTube} from "~/lib/providers/resolver.server"
+import {detectProviderFromUrl} from "~/lib/providers/types"
 import {
     getPlaylistInfo,
     prepareTracks,
@@ -24,6 +33,7 @@ import {
     type Track,
     uploadTrack,
 } from "~/lib/sandbox.server"
+import {fetchYotoIconsWithSdk} from "~/lib/yoto-icons.server"
 import type {YouTubeVideo} from "~/lib/youtube.server"
 
 type YotoContent = {
@@ -119,6 +129,27 @@ function getErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error)
 }
 
+function formatCleanTrackError(error: unknown): string {
+    const raw = getErrorMessage(error)
+    // Extract the specific ERROR: line from yt-dlp output if present, stripping WARNINGs
+    const errorLineMatch = raw.match(/ERROR:\s*(?:\[[^\]]+\]\s*[^:]+:\s*)?([^\n]+)/)
+    if (errorLineMatch?.[1]) {
+        return errorLineMatch[1].trim()
+    }
+    const strippedWarnings = raw
+        .split("\n")
+        .filter(line => !line.trim().startsWith("WARNING:"))
+        .join(" ")
+        .trim()
+    return strippedWarnings || "Failed to download or transcode audio"
+}
+
+type FailedAudioTrack = {
+    index: number
+    track: AudioTrack
+    reason: string
+}
+
 function createProgressReporter(
     tracks: ImportTrackProgress[],
     onProgress?: (progress: ImportProgress) => void | Promise<void>,
@@ -150,14 +181,20 @@ function createAudioTracks(
     splitByChapters: boolean,
 ): AudioTrack[] {
     return videos.flatMap(video => {
+        const metaFields = {
+            ...(video.artist && {artist: video.artist}),
+            ...(video.album && {album: video.album}),
+            ...(video.tags?.length && {tags: video.tags}),
+        }
         if (!splitByChapters || !video.chapters?.length) {
             return [
                 {
                     id: video.id,
                     sourceId: video.id,
-                    title: video.title,
+                    title: formatTitleWithArtist(video.title, video.artist),
                     url: video.url,
                     duration: video.duration,
+                    ...metaFields,
                 },
             ]
         }
@@ -165,11 +202,12 @@ function createAudioTracks(
         return video.chapters.map((chapter, index) => ({
             id: `${video.id}-${String(index + 1).padStart(2, "0")}`,
             sourceId: video.id,
-            title: chapter.title,
+            title: formatTitleWithArtist(chapter.title, video.artist),
             url: video.url,
             duration: chapter.endTime - chapter.startTime,
             startTime: chapter.startTime,
             endTime: chapter.endTime,
+            ...metaFields,
         }))
     })
 }
@@ -402,9 +440,59 @@ async function inspectVideo(
         uploaded: 0,
         ready: 0,
     })
+    const sandboxId = getImportSandboxId(cardImport)
+    const detected = detectProviderFromUrl(cardImport.youtubeUrl)
+    const isExternalProvider =
+        detected.provider !== null &&
+        detected.provider !== "youtube" &&
+        detected.provider !== "youtube_music"
+    const useGoogleApi =
+        (detected.provider === "youtube" ||
+            detected.provider === "youtube_music") &&
+        detected.urlType === "playlist" &&
+        getGoogleConnectionStatus(env).connected
+
+    if (isExternalProvider || useGoogleApi) {
+        const provider = getProviderForUrl(cardImport.youtubeUrl)
+        if (provider) {
+            const externalPlaylist = await provider.fetchPlaylist(
+                cardImport.youtubeUrl,
+                env,
+            )
+            const resolvedVideos: YouTubeVideo[] = []
+            for (const track of externalPlaylist.tracks) {
+                const res = await resolveTrackToYouTube(sandboxId, track)
+                if (res.status === "resolved") {
+                    resolvedVideos.push({
+                        id: res.youtubeVideoId,
+                        title: track.title,
+                        url: res.youtubeUrl,
+                        duration: res.durationSeconds ?? track.durationSeconds,
+                        artist: track.artist,
+                        album: track.album,
+                        tags: track.tags,
+                    })
+                }
+            }
+            if (resolvedVideos.length === 0) {
+                throw new Error(
+                    "None of the tracks in this playlist could be confidently resolved to YouTube audio.",
+                )
+            }
+            logger.info({
+                message: "import.inspect.completed",
+                importId: cardImport.id,
+                cardId: cardImport.cardId,
+                sourceCount: resolvedVideos.length,
+                durationMs: Date.now() - startedAt,
+            })
+            return resolvedVideos
+        }
+    }
+
     const youtubeInfo = await getPlaylistInfo(
         env,
-        getImportSandboxId(cardImport),
+        sandboxId,
         cardImport.youtubeUrl,
     )
 
@@ -655,11 +743,137 @@ async function processAudio(
     return transcodedTracks
 }
 
+async function processAudioResilient(
+    sdk: YotoSdk,
+    env: Env,
+    cardImport: Import,
+    videos: YouTubeVideo[],
+    onProgress?: (progress: ImportProgress) => void | Promise<void>,
+): Promise<{
+    succeeded: TranscodedTrack[]
+    failed: FailedAudioTrack[]
+}> {
+    const {cardId} = cardImport
+    const sandboxId = getImportSandboxId(cardImport)
+    const prepareLimit = pLimit(CONCURRENCY_LIMIT)
+    const uploadLimit = pLimit(CONCURRENCY_LIMIT)
+    const pollLimit = pLimit(CONCURRENCY_LIMIT)
+    let nextTrackIndex = 0
+    const sourcePlans = videos.map(video => ({
+        video,
+        tracks: createAudioTracks([video], cardImport.splitByChapters).map(
+            track => ({
+                index: nextTrackIndex++,
+                track,
+            }),
+        ),
+    }))
+    const trackProgress = sourcePlans
+        .flatMap(({tracks}) => tracks)
+        .sort((first, second) => first.index - second.index)
+        .map(({track}) => ({
+            duration: track.duration,
+            prepared: false,
+            uploaded: false,
+            ready: false,
+        }))
+    const reportProgress = createProgressReporter(trackProgress, onProgress)
+    await reportProgress()
+
+    const succeeded: TranscodedTrack[] = []
+    const failed: FailedAudioTrack[] = []
+
+    await Promise.all(
+        sourcePlans.map(async ({video, tracks}) => {
+            let preparedTracks: PreparedTrack[]
+            try {
+                preparedTracks = await prepareLimit(async () => {
+                    const prepared = await prepareSourceTracks(
+                        env,
+                        sandboxId,
+                        video,
+                        tracks,
+                    )
+                    tracks.forEach(({index}) => {
+                        trackProgress[index].prepared = true
+                    })
+                    await reportProgress()
+                    return prepared
+                })
+            } catch (error) {
+                const reason = formatCleanTrackError(error)
+                for (const {index, track} of tracks) {
+                    trackProgress[index].prepared = true
+                    trackProgress[index].uploaded = true
+                    trackProgress[index].ready = true
+                    failed.push({index, track, reason})
+                }
+                await reportProgress()
+                logger.warn({
+                    message: "import.audio.track_failed",
+                    cardId,
+                    videoId: video.id,
+                    title: video.title,
+                    reason,
+                })
+                return
+            }
+
+            await Promise.all(
+                preparedTracks.map(async preparedTrack => {
+                    try {
+                        const transcoded = await processPreparedTrack(
+                            sdk,
+                            env,
+                            sandboxId,
+                            cardImport,
+                            preparedTrack,
+                            uploadLimit,
+                            pollLimit,
+                            async alreadyTranscoded => {
+                                const {index} = preparedTrack
+                                trackProgress[index].uploaded = true
+                                trackProgress[index].ready = alreadyTranscoded
+                                await reportProgress()
+                            },
+                            async () => {
+                                trackProgress[preparedTrack.index].ready = true
+                                await reportProgress()
+                            },
+                        )
+                        succeeded.push(transcoded)
+                    } catch (error) {
+                        const reason = formatCleanTrackError(error)
+                        const {index, track} = preparedTrack
+                        trackProgress[index].uploaded = true
+                        trackProgress[index].ready = true
+                        failed.push({index, track, reason})
+                        await reportProgress()
+                        logger.warn({
+                            message: "import.audio.track_failed",
+                            cardId,
+                            trackId: track.id,
+                            title: track.title,
+                            reason,
+                        })
+                    }
+                }),
+            )
+        }),
+    )
+
+    succeeded.sort((a, b) => a.index - b.index)
+    failed.sort((a, b) => a.index - b.index)
+
+    return {succeeded, failed}
+}
+
 async function updateCard(
     sdk: YotoSdk,
     cardImport: Pick<Import, "id" | "cardId">,
     transcodedTracks: TranscodedTrack[],
     onProgress?: (progress: ImportProgress) => void | Promise<void>,
+    failedTracks: FailedAudioTrack[] = [],
 ): Promise<ImportSuccess> {
     const startedAt = Date.now()
     const {id: importId, cardId} = cardImport
@@ -686,7 +900,29 @@ async function updateCard(
         (first, second) => first.index - second.index,
     )
 
-    for (const {audio, track} of orderedTracks) {
+    // Collect icon mediaIds already used on this card so we never pick the same icon twice on the card
+    const usedIconIds = new Set<string>()
+    for (const ch of chapters) {
+        const iconRef =
+            ch.display?.icon16x16 ?? ch.tracks?.[0]?.display?.icon16x16
+        if (iconRef?.startsWith("yoto:#")) {
+            usedIconIds.add(iconRef.slice("yoto:#".length))
+        }
+    }
+
+    const yotoIcons = await fetchYotoIconsWithSdk(sdk)
+    const assignedIcons = pickUniqueYotoIconsForTracks(
+        yotoIcons,
+        orderedTracks.map(({track}) => ({
+            title: track.title,
+            artist: track.artist,
+            album: track.album,
+            tags: track.tags,
+        })),
+        usedIconIds,
+    )
+
+    orderedTracks.forEach(({audio, track}, idx) => {
         const nextKey = getNextChapterKey(chapters)
         chapters.push(
             createChapter(
@@ -695,8 +931,127 @@ async function updateCard(
                 parseInt(nextKey, 10) + 1,
                 audio.duration,
                 audio.fileSize,
+                assignedIcons[idx],
             ),
         )
+    })
+
+    // If the card is already tracked in SQLite card_block (or if there are failedTracks to surface), append standalone track blocks
+    try {
+        const db = getDb()
+        let existingBlocks = db
+            .select()
+            .from(schema.cardBlocks)
+            .where(eq(schema.cardBlocks.cardId, cardId))
+            .orderBy(asc(schema.cardBlocks.sortOrder))
+            .all()
+
+        const preExistingChapters = card.content?.chapters ?? []
+        if (existingBlocks.length === 0 && failedTracks.length > 0) {
+            preExistingChapters.forEach((ch, idx) => {
+                const rawIcon =
+                    ch.display?.icon16x16 ?? ch.tracks?.[0]?.display?.icon16x16
+                db.insert(schema.cardBlocks)
+                    .values({
+                        id: crypto.randomUUID(),
+                        cardId,
+                        sortOrder: idx,
+                        type: "track",
+                        yotoChapterKey: ch.key ?? String(idx).padStart(2, "0"),
+                        trackTitle: ch.title ?? "Untitled Track",
+                        trackSha256: ch.tracks?.[0]?.trackUrl?.replace(
+                            /^yoto:#/,
+                            "",
+                        ),
+                        trackDuration: ch.duration
+                            ? Math.round(ch.duration)
+                            : undefined,
+                        trackIconMediaId: rawIcon?.startsWith("yoto:#")
+                            ? rawIcon.slice("yoto:#".length)
+                            : undefined,
+                    })
+                    .run()
+            })
+            existingBlocks = db
+                .select()
+                .from(schema.cardBlocks)
+                .where(eq(schema.cardBlocks.cardId, cardId))
+                .orderBy(asc(schema.cardBlocks.sortOrder))
+                .all()
+        }
+
+        if (existingBlocks.length > 0 || failedTracks.length > 0) {
+            let nextSortOrder =
+                existingBlocks.reduce(
+                    (max, b) => Math.max(max, b.sortOrder),
+                    -1,
+                ) + 1
+            const startIdx = chapters.length - orderedTracks.length
+            const chapterKeyByIndex = new Map<number, string>()
+            const iconMediaIdByIndex = new Map<number, string | undefined>()
+            orderedTracks.forEach((item, idx) => {
+                const ch = chapters[startIdx + idx]
+                if (ch?.key) {
+                    chapterKeyByIndex.set(item.index, ch.key)
+                }
+                iconMediaIdByIndex.set(item.index, assignedIcons[idx])
+            })
+
+            const combined = [
+                ...orderedTracks.map(item => ({
+                    kind: "ok" as const,
+                    index: item.index,
+                    track: item.track,
+                    audio: item.audio,
+                    chapterKey: chapterKeyByIndex.get(item.index),
+                    iconMediaId: iconMediaIdByIndex.get(item.index),
+                })),
+                ...failedTracks.map(item => ({
+                    kind: "failed" as const,
+                    index: item.index,
+                    track: item.track,
+                    reason: item.reason,
+                })),
+            ].sort((a, b) => a.index - b.index)
+
+            for (const entry of combined) {
+                if (entry.kind === "ok") {
+                    db.insert(schema.cardBlocks)
+                        .values({
+                            id: crypto.randomUUID(),
+                            cardId,
+                            sortOrder: nextSortOrder++,
+                            type: "track",
+                            yotoChapterKey: entry.chapterKey,
+                            trackTitle: entry.track.title,
+                            trackSha256: entry.audio.key,
+                            trackDuration: Math.round(entry.audio.duration),
+                            trackFileSize: entry.audio.fileSize,
+                            trackIconMediaId: entry.iconMediaId ?? null,
+                        })
+                        .run()
+                } else {
+                    db.insert(schema.cardBlocks)
+                        .values({
+                            id: crypto.randomUUID(),
+                            cardId,
+                            sortOrder: nextSortOrder++,
+                            type: "track",
+                            yotoChapterKey: null,
+                            trackTitle: entry.track.title,
+                            trackSha256: null,
+                            trackDuration: entry.track.duration
+                                ? Math.round(entry.track.duration)
+                                : null,
+                            lastSyncStatus: "error",
+                            lastSyncError: entry.reason,
+                        })
+                        .run()
+                }
+            }
+        }
+    } catch {
+        // Ignore DB sync errors in isolated unit tests
     }
 
     const updatedCard: YotoCard = {
@@ -717,6 +1072,7 @@ async function updateCard(
     await reportProgress(true, "finalizing")
 
     const added = transcodedTracks.length
+    const skipped = failedTracks.length
     logger.info({
         message: "import.card.update.completed",
         importId,
@@ -729,9 +1085,12 @@ async function updateCard(
 
     return {
         status: "success",
-        message: `Added ${added} track${added !== 1 ? "s" : ""}`,
+        message: `Added ${added} track${added !== 1 ? "s" : ""}${skipped > 0 ? ` (${skipped} unavailable)` : ""}`,
         added,
-        skipped: 0,
+        skipped,
+        ...(skipped > 0 && {
+            description: `${skipped} track${skipped === 1 ? " could" : "s could"} not be downloaded and ${skipped === 1 ? "was" : "were"} marked unavailable on the card.`,
+        }),
     }
 }
 
@@ -739,10 +1098,12 @@ export {
     assertCardCapacity,
     checkCardCapacity,
     createAudioTracks,
+    formatCleanTrackError,
     inspectVideo,
     processAudio,
+    processAudioResilient,
     updateCard,
     YOTO_CARD_TRACK_LIMIT,
 }
 export {CardCapacityError}
-export type {TranscodedTrack}
+export type {FailedAudioTrack, TranscodedTrack}

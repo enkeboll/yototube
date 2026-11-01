@@ -1,10 +1,15 @@
 import type {ImportProgress} from "~/lib/import-utils"
 
+type ImportMode = "one_time" | "synced"
+type InsertPosition = "start" | "end"
+
 type Import = {
     id: string
     cardId: string
     youtubeUrl: string
     splitByChapters: boolean
+    importMode?: ImportMode
+    insertPosition?: InsertPosition
 }
 
 type ImportWorkflowParams = Import & {
@@ -19,6 +24,9 @@ type AudioTrack = {
     duration?: number
     startTime?: number
     endTime?: number
+    artist?: string
+    album?: string
+    tags?: string[]
 }
 
 type ImportResult =
@@ -53,9 +61,11 @@ export {getImportSandboxId}
 export type {
     AudioTrack,
     Import,
+    ImportMode,
     ImportResult,
     ImportStreamEvent,
     ImportSuccess,
     ImportWorkflowParams,
     ImportWorkflowResult,
+    InsertPosition,
 }

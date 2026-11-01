@@ -13,3 +13,9 @@ build/
 
 # SvelteKit
 .svelte-kit/
+
+# Database
+data/
+*.db
+*.db-shm
+*.db-wal

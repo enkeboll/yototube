@@ -25,8 +25,25 @@ export function getSandbox(sandboxId: string): SandboxInstance {
             options?: {env?: Record<string, string>},
         ): Promise<ExecResult> {
             try {
+                const basePath = process.env.PATH ?? ""
+                const extraPaths = [
+                    process.env.HOME ? `${process.env.HOME}/.local/bin` : "",
+                    "/opt/homebrew/bin",
+                    "/usr/local/bin",
+                ].filter(Boolean)
+                const mergedPath = [
+                    ...extraPaths.filter(p => !basePath.includes(p)),
+                    basePath,
+                ]
+                    .filter(Boolean)
+                    .join(":")
+
                 const {stdout, stderr} = await execAsync(command, {
-                    env: {...process.env, ...options?.env},
+                    env: {
+                        ...process.env,
+                        PATH: mergedPath,
+                        ...options?.env,
+                    },
                     maxBuffer: 50 * 1024 * 1024,
                     shell: "/bin/bash",
                 })

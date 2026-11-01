@@ -2,7 +2,11 @@ import {type Handle, redirect} from "@sveltejs/kit"
 
 import {env as privateEnv} from "$env/dynamic/private"
 import {getAppEnv, getAuthSecret} from "$lib/app-context"
-import {status} from "$lib/auth.server"
+import {getToken, status} from "$lib/auth.server"
+import {
+    ensureBackgroundSyncScheduler,
+    recordActiveYotoTokenForScheduler,
+} from "$lib/scheduler.server"
 
 export const handle: Handle = async ({event, resolve}) => {
     const env = getAppEnv({
@@ -12,15 +16,30 @@ export const handle: Handle = async ({event, resolve}) => {
                 privateEnv.YOTO_CLIENT_ID || process.env.YOTO_CLIENT_ID,
             RESEND_API_KEY:
                 privateEnv.RESEND_API_KEY || process.env.RESEND_API_KEY,
+            DATABASE_URL:
+                privateEnv.DATABASE_URL || process.env.DATABASE_URL,
+            GOOGLE_CLIENT_ID:
+                privateEnv.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID,
+            GOOGLE_CLIENT_SECRET:
+                privateEnv.GOOGLE_CLIENT_SECRET ||
+                process.env.GOOGLE_CLIENT_SECRET,
+            SYNC_INTERVAL_MINUTES:
+                privateEnv.SYNC_INTERVAL_MINUTES ||
+                process.env.SYNC_INTERVAL_MINUTES,
             PORT: privateEnv.PORT || process.env.PORT,
             NODE_ENV: privateEnv.NODE_ENV || process.env.NODE_ENV,
         },
     })
     event.locals.env = env
+    ensureBackgroundSyncScheduler(env)
 
     const authStatus = await status(event.request, env)
 
     if (authStatus.valid) {
+        const tokenRes = await getToken(event.request, env).catch(() => null)
+        if (tokenRes?.token) {
+            recordActiveYotoTokenForScheduler(tokenRes.token)
+        }
         event.locals.user = {
             valid: true,
             expiresIn: authStatus.expiresIn,
